@@ -1,0 +1,24 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# Editors
+.vscode/
+.idea/
+*.swp
+
+# Exported data backups (contain real financial figures — never commit)
+somifinance-*.json
+wealth-desk-*.json
+
+# Real-data copies of the app. This repo is public, so these are matched by PATTERN, not by
+# exact filename: the old rule listed SomiFinancePersonal.html alone, and any near-miss — a
+# rename, a browser "Save as", a dated copy — would have sailed past it into a public commit.
+# Only somiFinance.html (the shareable copy with fake seed data) is meant to be tracked.
+*[Pp]ersonal*.html
+*[Pp]rivate*.html
+*-real.html
+*-backup.html
+*.backup.html
+*.local.html
+*.bak
