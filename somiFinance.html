@@ -24,7 +24,7 @@
 -->
 <meta http-equiv="Content-Security-Policy" content="
   default-src 'none';
-  script-src 'sha256-LEfI6wtiATeJWC0ehfYamH0fHWvD5leT9b99SJsRVXU=' 'sha256-Gf0AeKbb6EzXUkFoSbuZ5nYm7IJbQLJlZ828u5C2glY=' https://s3.tradingview.com;
+  script-src 'sha256-LEfI6wtiATeJWC0ehfYamH0fHWvD5leT9b99SJsRVXU=' 'sha256-It+FjtcZvUnbH0q/cxQE4AVAIrPOBWGnyduCTE8AEgM=' https://s3.tradingview.com;
   style-src 'unsafe-inline';
   img-src data: https:;
   connect-src https://home.treasury.gov https://api.bls.gov https://open.er-api.com;
@@ -1473,7 +1473,7 @@ function renderMacro(){
   if(last){
     document.getElementById("yieldReads").innerHTML=
       [["10-year",last.y10,pal.blue],["20-year",last.y20,pal.accent],["30-year",last.y30,pal.peach]]
-      .map(([l,v,c])=>`<div class="read"><span class="rl">${l}</span><span class="rv" style="color:${c}">${v!=null?(+v).toFixed(2)+"%":"—"}</span><span class="rd">${last.date}</span></div>`).join("");
+      .map(([l,v,c])=>`<div class="read"><span class="rl">${l}</span><span class="rv" style="color:${c}">${v!=null?(+v).toFixed(2)+"%":"—"}</span><span class="rd">as of ${last.date}</span></div>`).join("");
   }
   line("yieldChart",y.map(p=>p.date),[
     mk("10yr",y.map(p=>p.y10),pal.blue),
@@ -1484,7 +1484,7 @@ function renderMacro(){
   const inf=[...state.inflation].sort((a,b)=>a.date<b.date?-1:1);
   const li=inf[inf.length-1];
   document.getElementById("infReads").innerHTML=li?
-    `<div class="read"><span class="rl">CPI YoY</span><span class="rv" style="color:${pal.down}">${(+li.cpi).toFixed(2)}%</span><span class="rd">${li.date}${li.note?" · "+li.note:""}</span></div>`:"";
+    `<div class="read"><span class="rl">CPI YoY</span><span class="rv" style="color:${pal.down}">${(+li.cpi).toFixed(2)}%</span><span class="rd">as of ${li.date}${li.note?" · "+esc(li.note):""}</span></div>`:"";
   line("infChart",inf.map(p=>p.date),[mk("CPI YoY",inf.map(p=>p.cpi),pal.down)],
     baseOpts({plugins:{legend:{display:false}},scales:{x:baseOpts().scales.x,y:pctY()}}));
 
@@ -1495,7 +1495,7 @@ function renderMacro(){
   }).filter(Boolean);
   const lastReal=real[real.length-1];
   document.getElementById("realReads").innerHTML=lastReal?
-    `<div class="read"><span class="rl">Real 10yr</span><span class="rv" style="color:${lastReal.v>=0?pal.up:pal.down}">${lastReal.v.toFixed(2)}%</span><span class="rd">${lastReal.date}</span></div>`:"";
+    `<div class="read"><span class="rl">Real 10yr</span><span class="rv" style="color:${lastReal.v>=0?pal.up:pal.down}">${lastReal.v.toFixed(2)}%</span><span class="rd">as of ${lastReal.date}</span></div>`:"";
   line("realChart",real.map(p=>p.date),[mk("Real yield (10yr − CPI)",real.map(p=>p.v),pal.up)],
     baseOpts({plugins:{legend:{display:false}},scales:{x:baseOpts().scales.x,y:pctY()}}));
 }

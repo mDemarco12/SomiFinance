@@ -99,6 +99,17 @@ can't slip past.
 Also: `esc()` is the only escaping helper — use it for anything interpolated into markup, including
 `data-` attributes. `cellInput()` used to escape `"` alone; it routes through `esc()` now.
 
+**`sanitizeState()` caps and coerces; it does NOT escape.** Escaping happens at render. The two jobs
+are separate on purpose, but the gap is easy to miss: `inflation[].note` is the one free-text field
+that reaches `innerHTML` *outside* `cellInput()` (in `renderMacro()`'s `infReads` row), and it was
+shipped unescaped in the first security pass — caught only when relabelling those dates. It is
+`esc()`'d now. **If you add another field that renders outside `cellInput()`, escape it explicitly**;
+the tables are safe by construction because everything there goes through `cellInput()`.
+
+The read-row dates all read `as of <date>` rather than a bare date — that date is the *source's*
+publication date, not a fetch timestamp. Treasury posts the daily curve ~3:30pm ET on business days,
+so a same-morning refresh legitimately returns the prior business day.
+
 ## Done
 
 **Overview tab**
