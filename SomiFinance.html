@@ -1,3 +1,6 @@
+<!-- GENERATED FILE — DO NOT EDIT.
+     Built from SomiFinanceDemo.html by build.py. Any change made here is lost on the next build;
+     edit SomiFinanceDemo.html and re-run `python3 build.py` instead. -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -24,7 +27,7 @@
 -->
 <meta http-equiv="Content-Security-Policy" content="
   default-src 'none';
-  script-src 'sha256-LEfI6wtiATeJWC0ehfYamH0fHWvD5leT9b99SJsRVXU=' 'sha256-w2qOvgKA+akVjPxN4Lh1AOK8DhbNnn4Lp3HkumckDHg=' https://s3.tradingview.com;
+  script-src 'sha256-LEfI6wtiATeJWC0ehfYamH0fHWvD5leT9b99SJsRVXU=' 'sha256-LVeV1uGXcael5XjcnpETewjm1efsBeZ/Q7nEiuuYXh0=' https://s3.tradingview.com;
   style-src 'unsafe-inline';
   img-src data: https:;
   connect-src https://home.treasury.gov https://api.bls.gov https://open.er-api.com;
@@ -34,7 +37,7 @@
   form-action 'none';">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="description" content="A single-file, offline-first personal net worth and macro dashboard. Runs entirely in your browser; no account, no server.">
-<title>SomiFinance — Demo</title>
+<title>SomiFinance</title>
 <style>
   :root{
     --bg:#0d1015; --panel:#141922; --panel-2:#1a212c; --line:#232c39;
@@ -582,7 +585,7 @@
         <tbody id="calBody"></tbody>
       </table>
       <button class="add-row" data-add="cal" id="btnAddEvent">+ Add event</button>
-      <div class="note">Seeded with recurring US releases plus two example personal dates. <b>Verify the release dates</b> against an official calendar — they shift, and a couple here are placeholders. Past events auto-grey.</div>
+      <div class="note">Seeded with recurring US releases. Add your own dates alongside them. <b>Verify the release dates</b> against an official calendar — they shift, and a couple here are placeholders. Past events auto-grey.</div>
     </div>
     <div class="panel reorderable resizable-v" data-panel="live">
       <button class="reorder-handle" draggable="true" title="Drag to reorder" aria-label="Move this panel">↕</button>
@@ -646,7 +649,7 @@
       <div class="note" style="margin-top:0">
         A single-file personal finance dashboard — net worth, budgeting, macro signals and an economic calendar in one page.
         There's no account, no server and no build step: everything runs in the browser and your figures are saved only to this
-        browser's <code>localStorage</code> under the key <code>somifinance.demo.v1</code>. Nothing is transmitted anywhere.
+        browser's <code>localStorage</code> under the key <code>somifinance.v1</code>. Nothing is transmitted anywhere.
         <br><br>
         Because the data lives in one browser profile, <b>Export</b> is your only backup — use it regularly, and <b>Import</b>
         to restore or move to another machine.
@@ -672,7 +675,7 @@
 </main>
 
 <div class="foot" id="foot"></div>
-<div class="watermark">SomiFinance — Demo ©2026 mDemarco12</div>
+<div class="watermark">SomiFinance ©2026 mDemarco12</div>
 <div class="toast" id="toast"></div>
 
 <script>
@@ -696,8 +699,8 @@
 // Each build gets its own key so opening one can never read or overwrite another's data —
 // on file:// most browsers treat every local file as a single origin. LEGACY_KEY is the
 // one-time migration path load() already walks; the personal build points it at the old key.
-const KEY="somifinance.demo.v1";
-const LEGACY_KEY="";
+const KEY="somifinance.v1";
+const LEGACY_KEY="wealthdesk.v1";
 /* @variant:end storage */
 function curInfo(){return CURRENCIES[state.currency]||CURRENCIES.USD;}
 function fxRate(){return (state.fx&&state.fx.rates&&state.fx.rates[state.currency])||1;}
@@ -750,45 +753,15 @@ const clampLiveCal=h=>Math.min(LIVE_CAL_MAX,Math.max(LIVE_CAL_MIN,Math.round(h))
    This whole function is a @variant block: build.py swaps it wholesale for the end-user and
    personal builds. Anything OUTSIDE the markers is shared by all three. */
 /* @variant:begin seed */
-// Dates run backwards from today() rather than being written as literals, so the demo's
-// net-worth curve is never stale no matter when someone opens it.
-function monthsAgo(n){
-  const d=new Date();
-  d.setDate(1);                       // avoid the Mar-31 → Feb-31 rollover
-  d.setMonth(d.getMonth()-n);
-  return d.toISOString().slice(0,10);
-}
-// A plausible-looking 24-month climb with a visible drawdown, so the Overview chart shows
-// something worth looking at. Deterministic — no Math.random(), or every reload redraws.
-//
-// The curve is anchored to the ledger it accompanies: the final point lands exactly on the
-// seeded net worth (and its liabilities on the seeded debt), so Overview's "since <date>"
-// delta reads as a normal month's move instead of a sudden six-figure jump.
-const DEMO_MONTHS=24;
-function demoHistory(endNet,endLiab){
-  const out=[], n=DEMO_MONTHS-1, startNet=endNet*0.62, startLiab=endLiab*1.28;
-  for(let i=n;i>=0;i--){
-    const t=(n-i)/n;
-    const net=startNet+(endNet-startNet)*t
-      + Math.sin((n-i)/2.4)*endNet*0.011
-      - (i>=8&&i<=11?endNet*0.026:0);          // a drawdown around months 12-15
-    const liab=startLiab+(endLiab-startLiab)*t;
-    const r=v=>Math.round(v/50)*50;
-    // the last row is pinned rather than rounded off the curve, so it matches the ledger exactly
-    const net_=i===0?endNet:r(net), liab_=i===0?endLiab:r(liab);
-    out.push({date:monthsAgo(i),net:net_,assets:net_+liab_,liab:liab_});
-  }
-  return out;
-}
-const sumRows=rows=>rows.reduce((s,r)=>s+(+r.value||0),0);
+// A first install starts with an empty ledger — the welcome screen and hint tour
+// walk the user through adding their first account. The calendar releases below are
+// reference data, not user data, so they stay.
 function seed(){
-  const assets=demoAssets(), liabilities=demoLiabilities();
-  const netNow=sumRows(assets)-sumRows(liabilities), liabNow=sumRows(liabilities);
   return {
     updated:today(),
-    onboarded:true,      // demo build opens straight into the dashboard — no welcome, no tour
-    hintsDone:true,
-    profile:{name:"Sam",goal:"personal"},   // goal keys: see GOALS
+    onboarded:false,
+    hintsDone:false,
+    profile:{name:"",goal:"personal"},   // goal keys: see GOALS
     theme:"terminal",
     lang:"en",
     currency:"USD",
@@ -797,57 +770,18 @@ function seed(){
     liveCalHeight:500,   // px height of the TradingView box — user-set via the corner grip
     autoRefresh:"off",   // off | stale | always — default off keeps page load request-free
     lastFetch:"",        // YYYY-MM-DD of the last fully successful macro fetch
-    assets,
-    liabilities,
-    history:demoHistory(netNow,liabNow),
-    yields:[
-      {date:monthsAgo(5),y10:4.28,y20:4.61,y30:4.77},
-      {date:monthsAgo(4),y10:4.41,y20:4.74,y30:4.90},
-      {date:monthsAgo(3),y10:4.36,y20:4.70,y30:4.88},
-      {date:monthsAgo(2),y10:4.52,y20:4.86,y30:5.03},
-      {date:monthsAgo(1),y10:4.61,y20:4.95,y30:5.14},
-      {date:monthsAgo(0),y10:4.75,y20:5.24,y30:5.25}
-    ],
-    inflation:[
-      {date:monthsAgo(5),cpi:2.9,note:"EXAMPLE — demo data"},
-      {date:monthsAgo(4),cpi:3.0,note:"EXAMPLE — demo data"},
-      {date:monthsAgo(3),cpi:3.1,note:"EXAMPLE — demo data"},
-      {date:monthsAgo(2),cpi:3.2,note:"EXAMPLE — demo data"},
-      {date:monthsAgo(1),cpi:3.3,note:"EXAMPLE — demo data"},
-      {date:monthsAgo(0),cpi:3.36,note:"EXAMPLE — demo data"}
-    ],
+    assets:[],
+    liabilities:[],
+    history:[],
+    yields:[{date:"2026-08-20",y10:4.69,y20:5.05,y30:5.23}],
+    inflation:[{date:"2026-07-31",cpi:3.2,note:"EXAMPLE — replace with latest print"}],
     calendar:[
       {id:uid(),date:"2026-09-04",event:"Nonfarm payrolls (Aug)",imp:"High",notes:"verify date"},
       {id:uid(),date:"2026-09-10",event:"CPI (Aug)",imp:"High",notes:"verify date"},
-      {id:uid(),date:"2026-09-16",event:"FOMC rate decision",imp:"High",notes:"verify date"},
-      {id:uid(),date:"2026-09-24",event:"Vesting date",imp:"Personal",notes:"example personal date"},
-      {id:uid(),date:"2026-10-15",event:"Quarterly rebalance",imp:"Personal",notes:"example personal date"}
+      {id:uid(),date:"2026-09-16",event:"FOMC rate decision",imp:"High",notes:"verify date"}
     ],
     budget:seedBudget()
   };
-}
-function demoAssets(){
-  return [
-      {id:uid(),name:"Global Index Fund",cat:"Brokerage",value:112400,notes:"core position — example data"},
-      {id:uid(),name:"Dividend Growth Fund",cat:"Brokerage",value:38650,notes:"example data"},
-      {id:uid(),name:"Small Cap Fund",cat:"Brokerage",value:14200,notes:"example data"},
-      {id:uid(),name:"Checking / savings",cat:"Cash",value:18500,notes:"day-to-day account"},
-      {id:uid(),name:"Emergency fund",cat:"Cash",value:24000,notes:"6 months of essentials"},
-      {id:uid(),name:"Treasury bill ladder",cat:"Cash",value:15000,notes:"rolling 3-month rungs"},
-      {id:uid(),name:"401(k)",cat:"Retirement",value:96800,notes:"target-date fund"},
-      {id:uid(),name:"Roth IRA",cat:"Retirement",value:41300,notes:"example data"},
-      {id:uid(),name:"HSA",cat:"HSA / FSA",value:9400,notes:"invested above the cash floor"},
-      {id:uid(),name:"Primary residence",cat:"Real estate",value:415000,notes:"est. market value"},
-      {id:uid(),name:"Car",cat:"Vehicle",value:19500,notes:"est. resale value"},
-      {id:uid(),name:"Digital assets",cat:"Crypto",value:6200,notes:"example data"}
-  ];
-}
-function demoLiabilities(){
-  return [
-      {id:uid(),name:"Mortgage",cat:"Mortgage",value:268000,notes:"example data"},
-      {id:uid(),name:"Auto loan",cat:"Auto loan",value:11400,notes:"example data"},
-      {id:uid(),name:"Credit card",cat:"Credit card",value:1850,notes:"paid in full monthly"}
-  ];
 }
 /* @variant:end seed */
 // tolerate older saves / partial imports that predate or half-populate the budget block
@@ -866,33 +800,30 @@ function normalizeBudget(){
   state.budget=b;
 }
 /* @variant:begin seedBudget */
-// The demo build fills every amount so the Budgeting tab, its totals and the future-spend
-// projection all have something to draw. The other builds ship this same row template with
-// every amount at 0 — build.py swaps the block, so the ROW LIST only exists in one place here.
 function seedBudget(){
-  const inc=(name,cat,amount,optional)=>({id:uid(),name,cat,amount,optional:!!optional,notes:""});
-  const exp=(name,cat,kind,amount,limit,optional)=>({id:uid(),name,cat,amount,limit,kind,optional:!!optional,notes:""});
+  const inc=(name,cat,optional)=>({id:uid(),name,cat,amount:0,optional:!!optional,notes:""});
+  const exp=(name,cat,kind,optional)=>({id:uid(),name,cat,amount:0,limit:0,kind,optional:!!optional,notes:""});
   return {
     income:[
-      inc("Net monthly income","Salary (net)",6800,false),
-      inc("401(k) contribution","401(k) contribution",900,true),
-      inc("Employer 401(k) match","Employer match",340,true),
-      inc("Other income stream","Other income",250,true)
+      inc("Net monthly income","Salary (net)",false),
+      inc("401(k) contribution","401(k) contribution",true),
+      inc("Employer 401(k) match","Employer match",true),
+      inc("Other income stream","Other income",true)
     ],
     expenses:[
-      exp("Rent / mortgage","Housing","essential",2150,2200),
-      exp("Utilities","Utilities","essential",210,250),
-      exp("Groceries","Groceries","essential",560,600),
-      exp("Insurance","Insurance","essential",305,320),
-      exp("Transportation / fuel","Transportation","essential",180,220),
-      exp("Phone / internet","Phone / internet","essential",145,150),
-      exp("Debt payments","Debt payments","essential",395,400,true),
-      exp("Eating out","Eating out","discretionary",240,200),
-      exp("Food delivery","Food delivery","discretionary",95,60),
-      exp("Subscriptions","Subscriptions","discretionary",78,60),
-      exp("Shopping","Shopping","discretionary",190,200),
-      exp("Entertainment","Entertainment","discretionary",120,150),
-      exp("Travel","Travel","discretionary",260,300,true)
+      exp("Rent / mortgage","Housing","essential"),
+      exp("Utilities","Utilities","essential"),
+      exp("Groceries","Groceries","essential"),
+      exp("Insurance","Insurance","essential"),
+      exp("Transportation / fuel","Transportation","essential"),
+      exp("Phone / internet","Phone / internet","essential"),
+      exp("Debt payments","Debt payments","essential",true),
+      exp("Eating out","Eating out","discretionary"),
+      exp("Food delivery","Food delivery","discretionary"),
+      exp("Subscriptions","Subscriptions","discretionary"),
+      exp("Shopping","Shopping","discretionary"),
+      exp("Entertainment","Entertainment","discretionary"),
+      exp("Travel","Travel","discretionary",true)
     ],
     assumptions:{rate:7,years:30}
   };
@@ -1710,7 +1641,7 @@ function applyCalendarOrder(){
 // SECURITY — the loader runs inside a sandboxed iframe, never in this document.
 // TradingView's embed-widget-events.js is a third-party script we neither pin nor hash. Appended
 // to #tvBox directly (as it was originally) it executes same-origin: it could read the whole of
-// localStorage["somifinance.demo.v1"] — every holding, value and note — rewrite the DOM, and call out
+// localStorage["somifinance.v1"] — every holding, value and note — rewrite the DOM, and call out
 // anywhere. Hosting it in a srcdoc iframe WITHOUT allow-same-origin puts it on an opaque origin,
 // so it can reach neither our storage nor our DOM.
 //

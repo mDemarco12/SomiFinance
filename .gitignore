@@ -14,7 +14,8 @@ wealth-desk-*.json
 # Real-data copies of the app. This repo is public, so these are matched by PATTERN, not by
 # exact filename: the old rule listed SomiFinancePersonal.html alone, and any near-miss — a
 # rename, a browser "Save as", a dated copy — would have sailed past it into a public commit.
-# Only somiFinance.html (the shareable copy with fake seed data) is meant to be tracked.
+# Only SomiFinanceDemo.html (the source, fake data) and SomiFinance.html (the end-user build,
+# empty ledger) are meant to be tracked.
 *[Pp]ersonal*.html
 *[Pp]rivate*.html
 *-real.html
@@ -22,3 +23,7 @@ wealth-desk-*.json
 *.backup.html
 *.local.html
 *.bak
+
+# The real seed data build.py projects into SomiFinancePersonal.html. The *personal*.html rules
+# above are .html-only and would NOT catch this, so it needs its own line.
+personal.variant.json

@@ -1,17 +1,31 @@
 # SomiFinance — Project Status
 
-> **Maintenance rule:** this doc is scanned by agents working on this project. Track it with `Scan count` below — increment it by 1 every time this doc is read for context. **On every 4th scan** (count reaches a multiple of 4), lint the whole doc against the current state of `somiFinance.html` before doing anything else: move shipped items out of "Could be done," delete resolved "Needs polish" / "Rebrand to-do" items, add anything newly true. Don't let this drift from the actual code.
+> **Maintenance rule:** this doc is scanned by agents working on this project. Track it with `Scan count` below — increment it by 1 every time this doc is read for context. **On every 4th scan** (count reaches a multiple of 4), lint the whole doc against the current state of `SomiFinanceDemo.html` before doing anything else: move shipped items out of "Could be done," delete resolved "Needs polish" / "Rebrand to-do" items, add anything newly true. Don't let this drift from the actual code.
 >
-> **Scan count:** 2 (security pass — CSP, sandboxed TradingView frame, `sanitizeState()`, genericized seed, history purge; see **Security posture** below)
+> **Scan count:** 4 (three-build split — `build.py`, per-build storage keys, empty-ledger end-user build; previously: security pass — CSP, sandboxed TradingView frame, `sanitizeState()`, genericized seed, history purge; see **Security posture** below)
 >
 > **Anchor style:** reference code by **symbol name** (`renderBudget()`, `#tvBox`, `THEMES`) — never by line number. A previous version used `file#L123` links and all 26 went stale the moment Chart.js was inlined. Symbol names stay greppable across edits.
 
 ## Snapshot
 
-- **What it is:** a single-file, offline-first personal net-worth & macro dashboard. Vanilla HTML/CSS/JS, no build step, no backend. Persists to `localStorage`.
+- **What it is:** a single-file, offline-first personal net-worth & macro dashboard. Vanilla HTML/CSS/JS, no bundler, no backend. Persists to `localStorage`. There is one build step, and it is not a compiler: `build.py` projects the source into the other two builds (see **Three builds** below). Every output is still a standalone single file that runs by double-clicking it.
 - **Genuinely offline on load.** Chart.js v4.4.1 is **inlined** into the file (~205 KB minified, 13 lines, MIT banner preserved, `sourceMappingURL` stripped) — no CDN tag, and the page's own two script blocks are both inline. Opening the page fires **zero** network requests **by default** (auto-refresh ships `off` — see Macro Signals). Only three things ever reach out, all user-triggered: the TradingView widget on first Economic Calendar view, the Treasury/BLS fetches on Refresh from Macro Signals, and the FX-rate fetch when a non-USD currency is selected. The single remaining third-party `script src` is TradingView's, and it lives inside the sandboxed frame's `srcdoc`, never in this document — see **Security posture**. Don't "optimize" Chart.js back to a CDN — inlining is deliberate (it also removes an unpinned-CDN supply-chain path, since the old tag had no SRI hash).
-- **File:** `somiFinance.html` (~2354 lines / ~330 KB, one file — markup, styles, and script all inline; ~205 KB of that is the inlined Chart.js).
-- **Two-file setup:** `somiFinance.html` is the repo/shareable copy and the ONLY file to edit by default. `SomiFinancePersonal.html` holds the user's real financial data and is `.gitignore`d — never touch it unless the user explicitly asks to port changes over.
+- **File:** `SomiFinanceDemo.html` (~2400 lines / ~335 KB, one file — markup, styles, and script all inline; ~205 KB of that is the inlined Chart.js).
+- **Three builds, one source.** `SomiFinanceDemo.html` is the **only file anyone edits**. `build.py` projects it into the other two. Never hand-edit a generated file — it carries a DO-NOT-EDIT banner and the next build silently overwrites it.
+
+  | File | What it is | Git |
+  | --- | --- | --- |
+  | `SomiFinanceDemo.html` | The source, and a working demo build: full fake portfolio, 24 months of history, filled budget, opens straight into the dashboard (`onboarded:true`). | tracked |
+  | `SomiFinance.html` | What a first-time visitor downloads. Empty ledger, welcome screen + hint tour run. | tracked, generated |
+  | `SomiFinancePersonal.html` | The maintainer's real data. | **gitignored**, generated |
+
+  Real seed data lives in `personal.variant.json` (gitignored, its own `.gitignore` line — the `*[Pp]ersonal*.html` rules are `.html`-only and would not catch a `.json`). If it is absent, `build.py` skips that build so a fresh clone still works.
+
+  **Everything the builds disagree about is either inside a `/* @variant:begin NAME */ … /* @variant:end NAME */` block (`storage`, `seed`, `seedBudget`) or in a variant's `strings` table in `build.py`.** Everything else is shared by construction. Two guards abort the build rather than shipping something wrong: every replacement must match **exactly once** (a reworded source otherwise no-ops silently), and no *tracked* output may contain a real ticker (`FORBIDDEN` / `leaks()` — matched on word boundaries, because a short ticker is also a substring of ordinary English words and a naive `in` check cries wolf on the source's own prose).
+
+  This replaces a hand-merge process under which the personal copy drifted a full release behind — no budget tab, no i18n, no FX, and an *unsandboxed* TradingView script that could read the real holdings out of `localStorage`. Don't go back to it.
+
+- **Each build has its own `localStorage` key**, because on `file://` most browsers treat every local file as one origin — without this, opening the demo would read and overwrite real data. `somifinance.demo.v1` / `somifinance.v1` / `somifinance.personal.v1`. The personal build sets `LEGACY_KEY` to `somifinance.v1`, so `load()`'s existing migration path carries the old data across on first open with no new code. `LEGACY_KEY` is `""` in the demo build and `load()` guards for that rather than calling `getItem("")`.
 - **Naming:** rebranded from the old internal "Wealth Desk" name to **SomiFinance** throughout (title, topbar, storage key, export filenames, toast copy). The old `localStorage` key (`wealthdesk.v1`) is migrated automatically on first load under the new key (`somifinance.v1`) so existing users don't lose data — see `load()` in the "Key facts" section below.
 
 ## Security posture
@@ -26,16 +40,23 @@ The `<head>` carries a `<meta http-equiv="Content-Security-Policy">` whose `scri
 without it the browser refuses injected event-handler attributes (`onmouseover=`, `onerror=`), so an
 XSS is dead even if an escaping site is ever missed.
 
-The cost: **edit the app script and the page goes blank until you paste in the new hash** (with a CSP
-error in the console). Hash 1 is the inlined Chart.js and never changes. Hash 2 is the app script.
-Regenerate with:
+The cost: **edit the app script and the page goes blank until the hash is regenerated** (with a CSP
+error in the console). Hash 1 is the inlined Chart.js and never changes. Hash 2 is the app script,
+and it differs per build because each build's seed data differs.
+
+**This is now automatic — just run the build:**
 
 ```
-python3 -c 'import re,hashlib,base64;s=open("somiFinance.html",encoding="utf-8").read();print(chr(10).join("sha256-"+base64.b64encode(hashlib.sha256(m.encode()).digest()).decode() for m in re.findall(r"<script>(.*?)</script>",s,re.S)))'
+python3 build.py
 ```
 
-It must print exactly two hashes. If it prints three, something in the file now spells out a script
-tag literally — that is why the command lives here and not in an HTML comment.
+Recomputing the hash and writing it into the `<meta>` is the last step of every build, including a
+hash refresh of `SomiFinanceDemo.html` itself (it is hand-edited, so its own hash goes stale too).
+`python3 build.py --check` rebuilds in memory and exits non-zero if anything on disk is stale.
+
+The build aborts if a file does not contain exactly two attribute-less `<script>` blocks. Three means
+something in the file now spells out a script tag literally — which is why `ensureTradingViewWidget()`
+assembles its tag as `'<'+'script'`.
 
 `connect-src` names the only three hosts the page may contact (Treasury, BLS, `open.er-api.com`).
 Adding a data source means adding it there too, or the fetch fails with no visible error.
@@ -92,9 +113,15 @@ a whitelist** — it is not `Object.assign(seed(), d)`, and must never go back t
 
 Keep every figure fake. It previously carried the author's real holdings, cost basis, an options
 position and a tax-timing note — all of which went public, and the first-run hint tour points users
-straight at those rows. Real data belongs in `SomiFinancePersonal.html`, which is gitignored by
-**pattern** now (`*[Pp]ersonal*.html` etc.), not by exact filename, so a rename or a "Save as" copy
-can't slip past.
+straight at those rows. This now matters **more**, not less: `SomiFinanceDemo.html`'s seed is a
+full portfolio built to be shown to people, so use placeholder fund names ("Global Index Fund"),
+never real tickers.
+
+Real data belongs in `personal.variant.json`, which is gitignored, and reaches
+`SomiFinancePersonal.html` only through `build.py`. That file is gitignored by **pattern**
+(`*[Pp]ersonal*.html` etc.), not by exact filename, so a rename or a "Save as" copy can't slip
+past — and `build.py` refuses to write a *tracked* build containing any real ticker, so the guard
+no longer depends on anyone remembering.
 
 Also: `esc()` is the only escaping helper — use it for anything interpolated into markup, including
 `data-` attributes. `cellInput()` used to escape `"` alone; it routes through `esc()` now.

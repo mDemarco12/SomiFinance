@@ -54,7 +54,9 @@ SomiFinance is a single-page dashboard for tracking your net worth alongside the
 
 ## Getting started
 
-There's nothing to install. Download `somiFinance.html` and open it in any modern browser.
+There's nothing to install. Download `SomiFinance.html` and open it in any modern browser.
+
+Want to see it with data in it first? `SomiFinanceDemo.html` is the same app carrying a full example portfolio — 24 months of history, a filled budget, populated charts. It keeps its own browser storage, so opening it never touches the data in your own copy.
 
 Your data is saved automatically to that browser's local storage. Use **Export** regularly to back it up as a JSON file — that backup is also how you'd move your data to a new browser or machine (**Import** it there).
 
