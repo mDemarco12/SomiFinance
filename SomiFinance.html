@@ -47,6 +47,44 @@
     --tape-bg:#0a0d12;
     --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
     --sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+
+    /* Fluid sizing. Every ramp is clamp(floor, px + vw, ceiling) — the px term is what keeps the
+       value responsive to browser zoom and user font settings, which a bare vw value ignores.
+       Safe next to theming: applyTheme() writes only the colour keys it knows onto <html>, so
+       these stylesheet-level tokens are never touched by a theme switch. */
+    /* 92vw leaves a margin on wide screens, but on its own it would make the shell NARROWER than
+       the old fixed 1180px cap on a <=1280px laptop. The lower bound floors it at the old width
+       (or the full viewport, whichever is smaller), so no screen size loses room. */
+    --shell:clamp(min(100vw,1180px),92vw,1800px);
+    --tile-min:clamp(150px,calc(120px + 4vw),260px);
+    --tile-gap:clamp(12px,calc(6px + 0.7vw),20px);
+    --tile-pad-y:clamp(12px,calc(4px + 0.8vw),22px);
+    --tile-pad-x:clamp(14px,calc(5px + 0.9vw),26px);
+    /* Four tiers of summary number, kept distinct on purpose — hero > macro readout > ledger
+       strip > tile is the existing hierarchy, and flattening them to one size would erase it. */
+    --v-hero:clamp(52px,calc(25px + 2.33vw),82px);     /* Overview net worth        */
+    --v-read:clamp(30px,calc(15px + 1.26vw),46px);     /* Macro readouts            */
+    --v-strip:clamp(26px,calc(13px + 1.09vw),40px);    /* Ledger net strip          */
+    --v-tile:clamp(22px,calc(13px + 0.85vw),34px);     /* stat tiles                */
+    --v-delta:clamp(15px,calc(7.5px + 0.63vw),23px);   /* the delta beside the hero */
+
+    /* Uppercase micro-labels. */
+    --l-mid:clamp(12px,calc(6px + 0.5vw),17px);        /* panel h3, net-strip label */
+    --l-tile:clamp(11px,calc(8px + 0.25vw),13px);
+    --l-micro:clamp(10.5px,calc(5.25px + 0.44vw),15px);/* th, read label, sec-head  */
+    --l-tag:clamp(10px,calc(5px + 0.42vw),14px);       /* panel tag, importance pill*/
+
+    /* Reading text ramps much more gently than numbers do — a headline can double, a table
+       row cannot, or wide screens end up with 18px body copy on very long lines. */
+    --t-body:clamp(13.5px,calc(9.6px + 0.33vw),17px);  /* tables, cells, banner     */
+    --t-mid:clamp(13px,calc(9.25px + 0.32vw),16.5px);
+    --t-mono:clamp(12.5px,calc(8.9px + 0.3vw),15.5px);
+    --t-small:clamp(12px,calc(8.5px + 0.29vw),15px);   /* notes, hero sub           */
+    --t-fine:clamp(11px,calc(7.8px + 0.27vw),14px);
+    --l-nano:clamp(9.5px,calc(4.75px + 0.4vw),13px);   /* alloc-summary sub-labels  */
+    --v-icon:clamp(16px,calc(11px + 0.42vw),21px);     /* row delete glyph          */
+
+    --panel-pad:clamp(18px,calc(6.5px + 0.98vw),30px);
   }
   *{box-sizing:border-box}
   html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.5}
@@ -122,18 +160,18 @@
   .tape-track{display:inline-block;padding:7px 0;animation:scroll 38s linear infinite}
   @media (prefers-reduced-motion:reduce){.tape-track{animation:none;padding-left:20px}}
   @keyframes scroll{from{transform:translateX(0)}to{transform:translateX(-50%)}}
-  .tick{display:inline-flex;align-items:baseline;gap:8px;padding:0 22px;font-family:var(--mono);font-size:12.5px;border-right:1px solid var(--line)}
+  .tick{display:inline-flex;align-items:baseline;gap:8px;padding:0 22px;font-family:var(--mono);font-size:var(--t-mono);border-right:1px solid var(--line)}
   .tick .lbl{color:var(--muted);letter-spacing:.05em}
   .tick .val{color:var(--ink)}
   .tick .up{color:var(--up)} .tick .down{color:var(--down)} .tick .amb{color:var(--amber)}
 
-  main{max-width:1180px;margin:0 auto;padding:22px 20px}
+  main{max-width:var(--shell);margin:0 auto;padding:22px 20px}
   .tab{display:none} .tab.active{display:block}
 
   /* banner */
   .banner{display:flex;align-items:center;gap:14px;background:linear-gradient(90deg,rgba(224,168,59,.12),rgba(224,168,59,.03));border:1px solid var(--amber-dim);border-radius:10px;padding:12px 16px;margin-bottom:20px}
   .banner .b-ico{font-size:18px}
-  .banner .b-txt{flex:1;font-size:13.5px;color:var(--ink)}
+  .banner .b-txt{flex:1;font-size:var(--t-body);color:var(--ink)}
   .banner .b-txt b{color:var(--amber)}
   .banner[hidden]{display:none}
 
@@ -142,8 +180,8 @@
   .cols-2{grid-template-columns:1fr 1fr}
   .cols-3{grid-template-columns:repeat(3,1fr)}
   @media(max-width:840px){.cols-2,.cols-3{grid-template-columns:1fr}}
-  .panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px}
-  .panel h3{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);font-weight:600;margin-bottom:14px;display:flex;align-items:center;gap:8px}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:var(--panel-pad)}
+  .panel h3{font-size:var(--l-mid);letter-spacing:.14em;text-transform:uppercase;color:var(--muted);font-weight:600;margin-bottom:14px;display:flex;align-items:center;gap:8px}
   .panel.reorderable{position:relative}
   .reorderable + .reorderable{margin-top:16px}
   .reorder-handle{position:absolute;top:-9px;right:16px;width:30px;height:18px;background:var(--panel-2);border:1px solid var(--line);border-radius:9px;display:flex;align-items:center;justify-content:center;cursor:grab;color:var(--muted);font-size:10px;line-height:1;z-index:5;user-select:none;padding:0}
@@ -168,31 +206,33 @@
      directly; !important would ignore it and the drag would look frozen. */
   #tvBox{height:var(--live-cal-h,500px)!important}
   #tvFrame{display:block;width:100%;height:100%;border:0}
-  .panel h3 .tag{margin-left:auto;font-size:10px;letter-spacing:.1em;color:var(--faint);font-family:var(--mono);text-transform:none}
+  .panel h3 .tag{margin-left:auto;font-size:var(--l-tag);letter-spacing:.1em;color:var(--faint);font-family:var(--mono);text-transform:none}
 
   /* about page */
   .about-card{display:flex;align-items:center;gap:20px;flex-wrap:wrap}
   .monogram{width:72px;height:72px;flex:none;border-radius:50%;background:linear-gradient(135deg,var(--amber),var(--peach));color:var(--bg);display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:26px;font-weight:600}
   .about-id .who{font-size:20px;font-weight:600;font-family:var(--mono);letter-spacing:.01em}
-  .about-id .role{color:var(--muted);font-size:13px;margin-top:2px}
-  .about-id .lnk{margin-top:8px;font-size:13px}
-  .credit-item{display:flex;gap:12px;padding:11px 0;border-bottom:1px solid rgba(35,44,57,.5);font-size:13.5px;flex-wrap:wrap}
+  .about-id .role{color:var(--muted);font-size:var(--t-mid);margin-top:2px}
+  .about-id .lnk{margin-top:8px;font-size:var(--t-mid)}
+  .credit-item{display:flex;gap:12px;padding:11px 0;border-bottom:1px solid rgba(35,44,57,.5);font-size:var(--t-body);flex-wrap:wrap}
   .credit-item:last-child{border-bottom:none}
   .credit-item .cn{flex:none;width:150px;font-weight:600}
-  .credit-item .cd{flex:1;min-width:220px;color:var(--muted);font-size:12.5px;line-height:1.5}
-  .credit-item .cl{font-family:var(--mono);font-size:10.5px;color:var(--faint);letter-spacing:.06em;text-transform:uppercase;align-self:center}
+  .credit-item .cd{flex:1;min-width:220px;color:var(--muted);font-size:var(--t-mono);line-height:1.5}
+  .credit-item .cl{font-family:var(--mono);font-size:var(--l-micro);color:var(--faint);letter-spacing:.06em;text-transform:uppercase;align-self:center}
 
   /* hero net worth */
   .hero{display:flex;align-items:flex-end;gap:24px;flex-wrap:wrap}
-  .hero .big{font-family:var(--mono);font-size:52px;font-weight:600;letter-spacing:-.01em;line-height:1}
-  .hero .delta{font-family:var(--mono);font-size:15px;padding-bottom:8px}
-  .hero .sub{color:var(--muted);font-size:12px;font-family:var(--mono);padding-bottom:10px}
+  .hero .big{font-family:var(--mono);font-size:var(--v-hero);font-weight:600;letter-spacing:-.01em;line-height:1}
+  .hero .delta{font-family:var(--mono);font-size:var(--v-delta);padding-bottom:8px}
+  .hero .sub{color:var(--muted);font-size:var(--t-small);font-family:var(--mono);padding-bottom:10px}
   .up{color:var(--up)} .down{color:var(--down)}
 
-  .stat-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-top:6px}
-  .stat{background:var(--panel-2);border-radius:8px;padding:12px 14px}
-  .stat .l{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
-  .stat .v{font-family:var(--mono);font-size:22px;margin-top:4px}
+  /* --tile-min caps at 260px so Budget's FIVE tiles stay on one row: 5x260 + 4 gaps = 1380px,
+     inside the 1800px shell ceiling. Raising either past that wraps that row 3+2. */
+  .stat-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(var(--tile-min),1fr));gap:var(--tile-gap);margin-top:6px}
+  .stat{background:var(--panel-2);border-radius:8px;padding:var(--tile-pad-y) var(--tile-pad-x)}
+  .stat .l{font-size:var(--l-tile);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+  .stat .v{font-family:var(--mono);font-size:var(--v-tile);margin-top:4px}
 
   /* allocation bars — rows flex-grow to fill the card (it's stretched to match the
      chart panel beside it) but are capped so a short list can't sprawl, and floored
@@ -200,89 +240,93 @@
      taller rows read as deliberate list items rather than floating text. */
   .panel-alloc{display:flex;flex-direction:column}
   #allocList{flex:1;display:flex;flex-direction:column;min-height:0}
-  .alloc-item{display:flex;align-items:center;gap:10px;font-size:13px;
-    flex:1 1 auto;min-height:34px;max-height:58px;border-bottom:1px solid var(--line)}
+  .alloc-item{display:flex;align-items:center;gap:10px;font-size:var(--t-mid);
+    flex:1 1 auto;min-height:34px;max-height:clamp(58px,calc(34px + 1.8vw),92px);border-bottom:1px solid var(--line)}
   .alloc-item:last-child{border-bottom:0}
   .alloc-item .swatch{width:10px;height:10px;border-radius:2px;flex:none}
-  .alloc-item .nm{flex:none;width:118px;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .alloc-item .bar{flex:1;height:10px;background:var(--panel-2);border-radius:5px;overflow:hidden}
+  .alloc-item .nm{flex:none;width:clamp(118px,calc(90px + 2.2vw),175px);color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .alloc-item .bar{flex:1;height:clamp(10px,calc(6px + 0.35vw),16px);background:var(--panel-2);border-radius:5px;overflow:hidden}
   .alloc-item .bar > i{display:block;height:100%;border-radius:5px}
-  .alloc-item .amt{font-family:var(--mono);font-size:12.5px;color:var(--muted);flex:none;width:140px;text-align:left;white-space:nowrap}
+  .alloc-item .amt{font-family:var(--mono);font-size:var(--t-mono);color:var(--muted);flex:none;width:clamp(140px,calc(112px + 2.2vw),200px);text-align:left;white-space:nowrap}
   .alloc-sum{display:flex;gap:18px;border-top:1px solid var(--line);margin-top:14px;padding-top:13px}
   .alloc-sum[hidden]{display:none}
   .alloc-sum > div{flex:1;min-width:0}
-  .alloc-sum .sl{font-family:var(--mono);font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;
+  .alloc-sum .sl{font-family:var(--mono);font-size:var(--l-nano);letter-spacing:.14em;text-transform:uppercase;
     color:var(--faint);margin-bottom:3px}
-  .alloc-sum .sv{font-size:13px;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .alloc-sum .sv{font-size:var(--t-mid);color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .alloc-sum .sv b{font-family:var(--mono);color:var(--amber);font-weight:600}
 
   canvas{max-width:100%}
-  .chart-box{position:relative;height:260px}
-  .chart-box.tall{height:300px}
+  .chart-box{position:relative;height:clamp(260px,calc(150px + 8vw),360px)}
+  .chart-box.tall{height:clamp(300px,calc(180px + 9vw),420px)}
 
   /* editable table */
-  table{width:100%;border-collapse:collapse;font-size:13.5px}
-  thead th{text-align:left;font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);font-weight:600;padding:8px 10px;border-bottom:1px solid var(--line)}
-  thead th.num{text-align:right}
+  table{width:100%;border-collapse:collapse;font-size:var(--t-body)}
+  thead th{text-align:left;font-size:var(--l-micro);letter-spacing:.1em;text-transform:uppercase;color:var(--muted);font-weight:600;padding:8px 10px;border-bottom:1px solid var(--line)}
+  /* Numeric headers stay LEFT-aligned even though their cells are right-aligned. Right-aligning
+     them pins each label to its column's right edge, so a numeric header lands within one th's
+     padding (~20px, whatever the column widths are) of the next left-aligned header — Budget's
+     LIMIT and TYPE read as one jammed pair. Header alignment is deliberately independent of cell
+     alignment here; .cell.num / tfoot td.num / .sec-head td.num below keep the FIGURES right. */
   tbody td{padding:2px;border-bottom:1px solid rgba(35,44,57,.5)}
   tbody tr:hover{background:rgba(26,33,44,.4)}
-  .cell{width:100%;background:transparent;border:1px solid transparent;color:var(--ink);padding:8px;border-radius:5px;font-size:13.5px;font-family:var(--sans)}
+  .cell{width:100%;background:transparent;border:1px solid transparent;color:var(--ink);padding:8px;border-radius:5px;font-size:var(--t-body);font-family:var(--sans)}
   .cell:hover{border-color:var(--line)}
   .cell:focus{outline:none;border-color:var(--amber);background:var(--panel-2)}
   .cell.num{text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums}
   select.cell{cursor:pointer;appearance:none}
-  .del{background:none;border:none;color:var(--faint);cursor:pointer;font-size:16px;padding:4px 8px;border-radius:5px}
+  .del{background:none;border:none;color:var(--faint);cursor:pointer;font-size:var(--v-icon);padding:4px 8px;border-radius:5px}
   .del:hover{color:var(--down);background:rgba(229,72,77,.1)}
   tfoot td{padding:10px;font-family:var(--mono);font-weight:600;border-top:2px solid var(--line)}
   tfoot td.num{text-align:right}
-  .add-row{background:none;border:1px dashed var(--line);color:var(--muted);padding:8px 14px;border-radius:6px;cursor:pointer;font-size:12.5px;margin-top:10px}
+  .add-row{background:none;border:1px dashed var(--line);color:var(--muted);padding:8px 14px;border-radius:6px;cursor:pointer;font-size:var(--t-mono);margin-top:10px}
   .add-row:hover{border-color:var(--amber-dim);color:var(--amber)}
 
   /* budget table */
-  .sec-head td{padding:12px 10px 6px;border-bottom:1px solid var(--line);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--amber);font-weight:600}
+  .sec-head td{padding:12px 10px 6px;border-bottom:1px solid var(--line);font-size:var(--l-micro);letter-spacing:.14em;text-transform:uppercase;color:var(--amber);font-weight:600}
   .sec-head td.num{text-align:right;font-family:var(--mono);color:var(--muted);letter-spacing:.04em}
-  .row-drag{width:26px;text-align:center;color:var(--faint);cursor:grab;user-select:none;font-size:13px;line-height:1}
+  .row-drag{width:26px;text-align:center;color:var(--faint);cursor:grab;user-select:none;font-size:var(--t-mid);line-height:1}
   .row-drag:active{cursor:grabbing}
   tr.dim .cell,tr.dim .row-drag{opacity:.6}
   tr.dragging{opacity:.4}
   tr.drop-above td{box-shadow:inset 0 2px 0 var(--amber)}
   tr.drop-below td{box-shadow:inset 0 -2px 0 var(--amber)}
   .cell.over-limit{color:var(--down)}
-  .na{color:var(--faint);text-align:center;font-family:var(--mono);font-size:12px}
+  .na{color:var(--faint);text-align:center;font-family:var(--mono);font-size:var(--t-small)}
   .add-row-cell{padding:6px 2px 2px !important;border-bottom:none !important}
   .add-row-cell .add-row{margin-top:0}
   tr.add-tr:hover{background:none}
 
   .net-strip{display:flex;justify-content:space-between;align-items:center;background:var(--panel-2);border:1px solid var(--line);border-radius:10px;padding:14px 18px;margin-top:16px}
-  .net-strip .n-l{font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
-  .net-strip .n-v{font-family:var(--mono);font-size:26px;font-weight:600}
+  .net-strip .n-l{font-size:var(--l-mid);letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+  .net-strip .n-v{font-family:var(--mono);font-size:var(--v-strip);font-weight:600}
 
   /* macro entry */
   .mini-form{display:flex;gap:8px;flex-wrap:wrap;align-items:end;margin-top:14px;padding-top:14px;border-top:1px solid var(--line)}
-  .mini-form label{display:flex;flex-direction:column;gap:4px;font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
-  .mini-form input{background:var(--panel-2);border:1px solid var(--line);color:var(--ink);padding:7px 9px;border-radius:6px;font-family:var(--mono);font-size:13px;width:110px}
+  .mini-form label{display:flex;flex-direction:column;gap:4px;font-size:var(--l-micro);letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+  .mini-form input{background:var(--panel-2);border:1px solid var(--line);color:var(--ink);padding:7px 9px;border-radius:6px;font-family:var(--mono);font-size:var(--t-mid);width:110px}
   .mini-form input:focus{outline:none;border-color:var(--amber)}
   .mini-form input[type=date]{width:145px}
   .read-row{display:flex;gap:22px;flex-wrap:wrap;margin-bottom:6px}
   .read{display:flex;flex-direction:column}
-  .read .rl{font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
-  .read .rv{font-family:var(--mono);font-size:30px;font-weight:600}
-  .read .rd{font-family:var(--mono);font-size:11px;color:var(--faint)}
-  .note{font-size:12px;color:var(--faint);line-height:1.5;margin-top:12px}
+  .read .rl{font-size:var(--l-micro);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+  .read .rv{font-family:var(--mono);font-size:var(--v-read);font-weight:600}
+  .read .rd{font-family:var(--mono);font-size:var(--t-fine);color:var(--faint)}
+  .note{font-size:var(--t-small);color:var(--faint);line-height:1.5;margin-top:12px}
   .note b{color:var(--muted)}
 
-  .imp{display:inline-block;font-family:var(--mono);font-size:10px;letter-spacing:.06em;text-transform:uppercase;padding:2px 7px;border-radius:4px}
+  .imp{display:inline-block;font-family:var(--mono);font-size:var(--l-tag);letter-spacing:.06em;text-transform:uppercase;padding:2px 7px;border-radius:4px}
   .imp.High{background:rgba(229,72,77,.15);color:#f08a8d}
   .imp.Med{background:rgba(224,168,59,.15);color:var(--amber)}
   .imp.Low{background:rgba(139,148,163,.12);color:var(--muted)}
   .imp.Personal{background:rgba(154,140,240,.15);color:var(--violet)}
 
-  .empty{color:var(--faint);font-size:13px;text-align:center;padding:26px}
+  .empty{color:var(--faint);font-size:var(--t-mid);text-align:center;padding:26px}
   .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(80px);background:var(--panel-2);border:1px solid var(--amber-dim);color:var(--ink);padding:11px 18px;border-radius:8px;font-size:13px;box-shadow:0 10px 30px rgba(0,0,0,.5);transition:transform .3s;z-index:60}
   .toast.show{transform:translateX(-50%) translateY(0)}
-  .foot{max-width:1180px;margin:24px auto 0;padding:0 20px;color:var(--faint);font-size:11.5px;line-height:1.6}
-  .foot code{background:var(--panel);padding:1px 5px;border-radius:4px;font-size:11px}
-  .watermark{max-width:1180px;margin:10px auto 0;padding:0 20px;color:var(--faint);font-size:11px;text-align:center;letter-spacing:.03em}
+  .foot{max-width:var(--shell);margin:24px auto 0;padding:0 20px;color:var(--faint);font-size:clamp(11.5px,calc(8.2px + 0.28vw),14.5px);line-height:1.6}
+  .foot code{background:var(--panel);padding:1px 5px;border-radius:4px;font-size:var(--t-fine)}
+  .watermark{max-width:var(--shell);margin:10px auto 0;padding:0 20px;color:var(--faint);font-size:var(--t-fine);text-align:center;letter-spacing:.03em}
    /* intro wipe — bar uses the live theme accent (--amber), so it's
      amber on Terminal, mauve on Frappé/Mocha/Macchiato, violet on Latte */
   .intro-wipe{position:fixed;inset:0;background:var(--amber);z-index:100;pointer-events:none;
