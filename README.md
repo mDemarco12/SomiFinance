@@ -17,7 +17,7 @@ SomiFinance is a single-page dashboard for tracking your net worth alongside the
 
 ### Assets & Liabilities ledger
 - Fully editable tables — click any cell to update it
-- Categorize each item (Brokerage, Cash, Retirement, Vehicle, Real estate, Crypto, and more for assets; Credit card, Auto loan, Mortgage, and more for liabilities)
+- Categorize each item — and the category lists follow what you're tracking. Personal finance gets Brokerage, Cash, Retirement, Vehicle, Real estate, Crypto and more; a business gets Operating cash, Accounts receivable, Inventory, Equipment, and so on. Switching between them never changes a row you've already entered — your existing category is kept and stays selectable
 - Add or remove rows freely; totals and net worth update live
 
 ### Budgeting
@@ -42,15 +42,17 @@ SomiFinance is a single-page dashboard for tracking your net worth alongside the
 - Both are picked from the ⚙ settings menu and persist between visits
 
 ### Everything else
-- **First-run welcome** — a one-time setup screen asks your name and what you're tracking (personal finance, start-up, business), then drops you into the ledger with short hints pointing at the fields you need. Dismiss any hint with ✕; it never returns
+- **First-run welcome** — a one-time setup screen asks your name and what you're tracking (personal finance, start-up, personal business, or something else), then drops you into the ledger with short hints pointing at the fields you need. Your answer tailors both the hints and the category lists you'll work with. Dismiss any hint with ✕; it never returns
 - **5 built-in themes** (a default terminal-style theme plus four Catppuccin variants), with charts that re-theme live when you switch
+- **Make it yours** — change your display name at any time from ⚙, and pick the colour it shows in beside the SomiFinance logo (cyan, your theme's accent, green or blue — each one adapts to whichever theme you're on)
 - **Scrolling ticker tape** summarizing your key numbers at a glance
 - **Export / Import** your full dataset as JSON for backup or transfer
 - **Snapshot history** — hit Refresh to log a dated point to your net worth chart whenever you update your figures
 - **Optional auto-refresh** of Treasury and CPI data on load (ships off — see below)
 - A gentle reminder banner if your numbers haven't been touched in a while
+- **Start over** — ⚙ → Reset all data clears everything and returns you to the first-run screen. It warns you what will go, offers to export a backup first, and won't proceed until you type `Yes`
 - Keyboard shortcuts (`1`–`6` to switch tabs, `Esc` to close menus)
-- Responsive layout for smaller screens
+- Layout that follows your window — the shell, tiles and type scale up on a large monitor and collapse to a single column on a small one
 
 ## Getting started
 
@@ -83,9 +85,11 @@ Imported backups are treated as untrusted input: every field is validated agains
 
 ## Tech stack
 
-- Vanilla HTML, CSS, and JavaScript — no framework, no build step, one file
+- Vanilla HTML, CSS, and JavaScript — no framework, no bundler, one self-contained file
 - [Chart.js](https://www.chartjs.org/) for charts (inlined, not CDN-loaded)
 - Browser `localStorage` for persistence
+
+There's nothing to build to *use* SomiFinance — you download one HTML file and open it. Contributors should know that the distributed files are generated: `SomiFinanceDemo.html` is the source everyone edits, and `python3 build.py` projects it into `SomiFinance.html`. Don't hand-edit a generated file; it carries a DO-NOT-EDIT banner and the next build overwrites it.
 
 ## Roadmap
 
