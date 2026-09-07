@@ -5,8 +5,6 @@ A personal net-worth and macro-signals dashboard that runs entirely in your brow
 
 <img width="665" height="598" alt="Screenshot 2026-09-07 at 11 36 21" src="https://github.com/user-attachments/assets/39cb60d7-c2e1-4ef4-895b-07cd305d4bb1" />
 
-<img width="1696" height="766" alt="screenshot" src="https://github.com/user-attachments/assets/f48da16b-36d6-4868-988d-7459fc95c94c" />
-
 ## What it does
 
 SomiFinance is a single-page dashboard for tracking your net worth alongside the macro indicators that give it context — treasury yields, inflation, and an economic calendar — all in one place, updated by hand on your schedule. It speaks three languages and six currencies, and the whole thing is one HTML file you can email to yourself.
@@ -16,6 +14,8 @@ SomiFinance is a single-page dashboard for tracking your net worth alongside the
 - Totals for assets, liabilities, invested (brokerage/retirement/crypto), and cash
 - Allocation breakdown by category
 - Net worth history chart, built from the snapshots you log over time
+
+<img width="1696" height="766" alt="screenshot" src="https://github.com/user-attachments/assets/f48da16b-36d6-4868-988d-7459fc95c94c" />
 
 ### Assets & Liabilities ledger
 - Fully editable tables — click any cell to update it
