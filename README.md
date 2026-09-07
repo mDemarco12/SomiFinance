@@ -3,10 +3,8 @@
 
 A personal net-worth and macro-signals dashboard that runs entirely in your browser — no install, no account, no server. Open the HTML file and your data stays on your machine.
 
-Intro Screen
 <img width="665" height="598" alt="Screenshot 2026-09-07 at 11 36 21" src="https://github.com/user-attachments/assets/39cb60d7-c2e1-4ef4-895b-07cd305d4bb1" />
 
-Demo of Overview
 <img width="1696" height="766" alt="screenshot" src="https://github.com/user-attachments/assets/f48da16b-36d6-4868-988d-7459fc95c94c" />
 
 ## What it does
