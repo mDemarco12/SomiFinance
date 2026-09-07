@@ -24,7 +24,7 @@
 -->
 <meta http-equiv="Content-Security-Policy" content="
   default-src 'none';
-  script-src 'sha256-LEfI6wtiATeJWC0ehfYamH0fHWvD5leT9b99SJsRVXU=' 'sha256-gBtousnPefwKWFDiUJYugM9a7eAC0ZZWcDu9zkDTlqA=' https://s3.tradingview.com;
+  script-src 'sha256-LEfI6wtiATeJWC0ehfYamH0fHWvD5leT9b99SJsRVXU=' 'sha256-61Ju2poHuXJ4RV4SEdDKWvcuatpJAW1vkQSTh5x3f/s=' https://s3.tradingview.com;
   style-src 'unsafe-inline';
   img-src data: https:;
   connect-src https://home.treasury.gov https://api.bls.gov https://open.er-api.com;
@@ -368,6 +368,25 @@
   .welcome .wc-skip{background:none;border:0;color:var(--bg);opacity:.66;font-size:13px;
     cursor:pointer;text-decoration:underline;font-family:inherit;padding:4px}
   .welcome .wc-skip:hover{opacity:1}
+  /* The reset confirm reuses the whole welcome panel — same overlay, same field and button
+     styling — but in the loss colour, so a destructive dialog never wears the friendly accent. */
+  .intro-wipe.danger{background:var(--down)}
+  .welcome .wc-warn{background:rgba(0,0,0,.16);border:1px solid rgba(0,0,0,.22);border-radius:8px;
+    padding:12px 14px;margin-bottom:18px;font-size:13px;line-height:1.55}
+  .welcome .wc-warn b{font-weight:600}
+  .welcome .wc-go[disabled]{opacity:.4;cursor:not-allowed}
+  .welcome .wc-go[disabled]:hover{background:rgba(0,0,0,.82)}
+  /* #fff, not var(--ink): the fill is near-black in every theme, and Latte's --ink is a dark
+     slate (#4c4f69), which would put dark text on a dark button. */
+  .welcome .wc-alt{background:rgba(0,0,0,.82);color:#fff;border:0;padding:9px 16px;
+    border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit}
+  .welcome .wc-alt:hover{background:#000}
+  /* destructive action, deliberately last and set apart from the five pickers above it */
+  .set-danger{width:100%;margin-top:6px;padding-top:10px;border-top:1px solid var(--line)}
+  .set-danger button{width:100%;background:none;border:1px solid var(--line);color:var(--down);
+    padding:9px 10px;border-radius:8px;cursor:pointer;font-family:var(--mono);
+    font-size:var(--l-micro);letter-spacing:.1em;text-transform:uppercase;text-align:left}
+  .set-danger button:hover{border-color:var(--down);background:rgba(229,72,77,.08)}
 
   /* guided hints — highlight the field, explain it beside it, ✕ to leave */
   .hint-target{outline:2px solid var(--amber)!important;outline-offset:3px;border-radius:6px;
@@ -450,6 +469,11 @@
           <span class="sh-name">◎ Tracking</span><span class="sh-cur" id="shCurGoal"></span><span class="sh-caret">›</span>
         </button>
         <div class="set-body" id="goalItems" hidden></div>
+      </div>
+      <!-- Not a .set-sec: openSetSection() treats every .set-head as an accordion panel, and a
+           one-shot destructive action is not a picker. Plain button, set apart by a rule. -->
+      <div class="set-danger">
+        <button type="button" id="resetBtn">⟲ Reset all data</button>
       </div>
     </div>
   </div>
@@ -2406,6 +2430,88 @@ function showWelcome(){
   setTimeout(()=>{const n=document.getElementById("wcName");if(n)n.focus();},480);
 }
 
+/* ---------- reset ----------
+   Wipes the store and returns to first boot. Reuses the welcome overlay in the loss colour.
+
+   The confirm phrase is matched EXACTLY ("Yes", trimmed). A case-insensitive match would make the
+   gesture reflexive, which is the one thing a destructive confirm must not be. */
+const RESET_PHRASE="Yes";
+// Removing KEY alone does NOT reset anything: load() falls back to LEGACY_KEY and copies it back
+// into KEY on the next boot, so the data returns. That is live in two builds — the personal build's
+// LEGACY_KEY is somifinance.v1, and the end-user build's is wealthdesk.v1 for migrated users.
+// Both keys go, or it is not a reset.
+function clearStoredData(){
+  try{
+    localStorage.removeItem(KEY);
+    if(LEGACY_KEY)localStorage.removeItem(LEGACY_KEY);
+  }catch(e){/* private windows can throw on access; nothing was persisted anyway */}
+}
+function showResetConfirm(){
+  const panel=document.createElement("div");
+  panel.className="intro-wipe hold danger";
+  panel.setAttribute("role","dialog");
+  panel.setAttribute("aria-modal","true");
+  panel.setAttribute("aria-label","Reset all data");
+  panel.innerHTML=`<div class="welcome">
+    <h1>Reset all data?</h1>
+    <div class="wc-sub">This clears everything and returns SomiFinance to a fresh install.</div>
+    <div class="wc-warn">
+      Deletes every <b>asset, liability, budget row, snapshot and calendar entry</b>, along with your
+      name, what you're tracking, and your theme, language and currency settings.<br><br>
+      Your data lives only in this browser — there is no server copy, so
+      <b>this cannot be undone</b>. Export a backup first if there is any chance you'll want it.
+    </div>
+    <div class="wc-field">
+      <button type="button" class="wc-alt" id="rsExport">⭳ Export a backup first</button>
+    </div>
+    <div class="wc-field">
+      <label for="rsConfirm">Type ${RESET_PHRASE} to confirm</label>
+      <input id="rsConfirm" type="text" placeholder="${RESET_PHRASE}" autocomplete="off"
+        autocapitalize="off" autocorrect="off" spellcheck="false" maxlength="10">
+    </div>
+    <div class="wc-actions">
+      <button type="button" class="wc-go" id="rsGo" disabled aria-disabled="true">Reset everything</button>
+      <button type="button" class="wc-skip" id="rsCancel">Cancel</button>
+    </div>
+  </div>`;
+  document.body.appendChild(panel);
+
+  const input=panel.querySelector("#rsConfirm"), go=panel.querySelector("#rsGo");
+  const armed=()=>input.value.trim()===RESET_PHRASE;
+  const sync=()=>{
+    const on=armed();
+    go.disabled=!on;
+    go.setAttribute("aria-disabled",String(!on));
+  };
+  const close=()=>{
+    document.removeEventListener("keydown",esc,true);
+    panel.classList.add("closing");
+    setTimeout(()=>panel.remove(),320);
+    const cog=document.getElementById("cogBtn");
+    if(cog)cog.focus();          // put focus back where the flow started
+  };
+  const esc=e=>{if(e.key==="Escape"){e.preventDefault();close();}};
+  const commit=()=>{
+    if(!armed())return;
+    clearStoredData();
+    // stop any in-flight save() from re-writing the key between the removal and the navigation
+    canPersist=false;
+    // A reload IS the first-run path — init() re-runs, load() finds nothing, seed() and
+    // showWelcome() follow. Rebuilding that in place would leave chart instances and the hint
+    // tour's scroll/resize/keydown listeners behind.
+    location.reload();
+  };
+
+  input.addEventListener("input",sync);
+  input.addEventListener("keydown",e=>{if(e.key==="Enter"){e.preventDefault();commit();}});
+  go.addEventListener("click",commit);
+  panel.querySelector("#rsCancel").addEventListener("click",close);
+  panel.querySelector("#rsExport").addEventListener("click",exportJSON);
+  document.addEventListener("keydown",esc,true);
+  sync();
+  setTimeout(()=>input.focus(),480);   // after the panel's sweep-in settles
+}
+
 // Each step highlights a live field and explains it beside it. Selectors are re-resolved
 // on every step — renderLedger() rebuilds #assetBody via innerHTML, so a cached node dies.
 const HINTS=[
@@ -2581,6 +2687,12 @@ function init(){
     cog.setAttribute("aria-expanded",String(open));
   });
   document.addEventListener("click",e=>{if(!tl.hidden&&!e.target.closest(".theme-wrap"))closeThemeMenu();});
+
+  document.getElementById("resetBtn").addEventListener("click",e=>{
+    e.stopPropagation();      // don't trip the outside-click closer before the dialog is up
+    closeThemeMenu();
+    showResetConfirm();
+  });
 
   document.addEventListener("keydown",e=>{
     if(e.key==="Escape"){closeMenu();closeThemeMenu();}
