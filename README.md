@@ -22,21 +22,30 @@ SomiFinance is a single-page dashboard for tracking your net worth alongside the
 - Categorize each item — and the category lists follow what you're tracking. Personal finance gets Brokerage, Cash, Retirement, Vehicle, Real estate, Crypto and more; a business gets Operating cash, Accounts receivable, Inventory, Equipment, and so on. Switching between them never changes a row you've already entered — your existing category is kept and stays selectable
 - Add or remove rows freely; totals and net worth update live
 
+<img width="1994" height="1219" alt="Screenshot 2026-09-07 at 12 25 00" src="https://github.com/user-attachments/assets/33ce1ee4-9cba-4cd6-bab7-bac039383b93" />
+
 ### Budgeting
 - Monthly cash-in / cash-out ledger with drag-to-reorder rows, split into income and expense sections
 - Live totals for cash in, cash out, net cash flow, savings rate, and discretionary spend
 - Per-category spending limits with a spend-vs-limit chart
 - Future spend projection — models what your discretionary spending would be worth if invested instead, at a return rate and time horizon you set
 
+<img width="1999" height="1287" alt="Screenshot 2026-09-07 at 12 25 21" src="https://github.com/user-attachments/assets/5bc61c0c-7286-49c3-a933-2e4c61ed1583" />
+<img width="1999" height="1287" alt="Screenshot 2026-09-07 at 12 25 27" src="https://github.com/user-attachments/assets/22016437-5c56-4ff7-98e2-0db67f6e95f7" />
+
 ### Macro Signals
 - Track 10/20/30-year Treasury yields over time with a running chart
 - Track CPI year-over-year inflation readings
 - Automatically computed real yield (10-year nominal minus latest CPI)
 
+<img width="1999" height="1287" alt="Screenshot 2026-09-07 at 12 25 38" src="https://github.com/user-attachments/assets/ad916e62-4fec-4663-a34f-6e3cf06518d9" />
+
 ### Economic Calendar
 - **Personal calendar** — log your own dated events (earnings, options expiries, release dates) with importance tags (High / Medium / Low / Personal); auto-sorts by date and greys out past events
 - **Live calendar** — TradingView's US economic calendar embedded alongside it as a read-only reference feed
 - Drag either panel to reorder them, and drag the corner grip to resize the live feed to whatever height suits you — the size is remembered
+
+<img width="1999" height="1287" alt="Screenshot 2026-09-07 at 12 25 46" src="https://github.com/user-attachments/assets/c6307acf-e84d-44db-b778-f4c55337f389" />
 
 ### Languages & currency
 - **Three languages** — English, 繁體中文 (Traditional Chinese), 简体中文 (Simplified Chinese), covering the app's headings, tabs, table columns, and buttons
