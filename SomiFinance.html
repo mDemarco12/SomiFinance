@@ -27,7 +27,7 @@
 -->
 <meta http-equiv="Content-Security-Policy" content="
   default-src 'none';
-  script-src 'sha256-LEfI6wtiATeJWC0ehfYamH0fHWvD5leT9b99SJsRVXU=' 'sha256-LVeV1uGXcael5XjcnpETewjm1efsBeZ/Q7nEiuuYXh0=' https://s3.tradingview.com;
+  script-src 'sha256-LEfI6wtiATeJWC0ehfYamH0fHWvD5leT9b99SJsRVXU=' 'sha256-lhqGcpaZwBCt0W4eAP7GgVvGtLV3VNhWH7XZBI05Euw=' https://s3.tradingview.com;
   style-src 'unsafe-inline';
   img-src data: https:;
   connect-src https://home.treasury.gov https://api.bls.gov https://open.er-api.com;
@@ -448,6 +448,12 @@
         </button>
         <div class="set-body" id="curItems" hidden></div>
       </div>
+      <div class="set-sec">
+        <button class="set-head" type="button" data-sec="goal" aria-expanded="false" aria-controls="goalItems">
+          <span class="sh-name">◎ Tracking</span><span class="sh-cur" id="shCurGoal"></span><span class="sh-caret">›</span>
+        </button>
+        <div class="set-body" id="goalItems" hidden></div>
+      </div>
     </div>
   </div>
 </div>
@@ -760,21 +766,65 @@ const today=()=>new Date().toISOString().slice(0,10);
 // crypto.randomUUID where available — ids are the identity key for edit/delete, and since
 // importJSON() now regenerates every id, a collision would silently retarget a row.
 const uid=()=>(self.crypto&&crypto.randomUUID)?crypto.randomUUID():Math.random().toString(36).slice(2,9);
-const ASSET_CATS=["Brokerage","Cash","Retirement","Vehicle","Real estate","Crypto",
-  "Collectibles","Precious metals","Business equity","Life insurance","HSA / FSA","Alternative Asset","Other"];
-const LIAB_CATS=["Credit card","Auto loan","Student loan","Mortgage","Personal loan","Other"];
-const INCOME_CATS=["Salary (net)","401(k) contribution","Employer match","Bonus / commission",
-  "Side income","Freelance / contract","Rental income","Investment income","Interest / dividends",
-  "Reimbursements","Other income"];
-const EXPENSE_CATS=["Housing","Utilities","Groceries","Insurance","Transportation","Healthcare",
-  "Debt payments","Phone / internet","Childcare","Education","Eating out","Food delivery",
-  "Subscriptions","Shopping","Entertainment","Travel","Hobbies","Fitness","Personal care",
-  "Gifts / donations","Other"];
+/* ---------- categories, per goal ----------
+   Two sets. `personal` also serves the "Something else" goal — a general-purpose ledger is the
+   right default when the user declines to say. `business` serves both "Start-up" and "Personal
+   business"; they differ in vocabulary more than in structure, and one coherent set beats two
+   half-maintained ones.
+
+   Switching goal NEVER rewrites a row. A row whose category isn't in the active set keeps it, and
+   catOptions() surfaces it in the dropdown so it can't be lost to a stray click. */
+const CAT_SETS={
+  personal:{
+    assets:["Brokerage","Cash","Retirement","Vehicle","Real estate","Crypto",
+      "Collectibles","Precious metals","Business equity","Life insurance","HSA / FSA","Alternative Asset","Other"],
+    liab:["Credit card","Auto loan","Student loan","Mortgage","Personal loan","Other"],
+    income:["Salary (net)","401(k) contribution","Employer match","Bonus / commission",
+      "Side income","Freelance / contract","Rental income","Investment income","Interest / dividends",
+      "Reimbursements","Other income"],
+    expense:["Housing","Utilities","Groceries","Insurance","Transportation","Healthcare",
+      "Debt payments","Phone / internet","Childcare","Education","Eating out","Food delivery",
+      "Subscriptions","Shopping","Entertainment","Travel","Hobbies","Fitness","Personal care",
+      "Gifts / donations","Other"],
+    defaults:{asset:"Brokerage",liab:"Credit card",income:"Other income",expense:"Other"}},
+  business:{
+    assets:["Operating cash","Business savings","Reserves / investments","Accounts receivable",
+      "Inventory","Equipment","Vehicle","Property","Business equity","Other"],
+    liab:["Business credit card","Business loan","Line of credit","Accounts payable",
+      "Equipment finance","Other"],
+    income:["Sales / services","Product sales","Tips","Memberships / recurring",
+      "Grants / funding","Interest / dividends","Other income"],
+    expense:["Rent / premises","Utilities","Supplies / materials","Inventory / COGS",
+      "Payroll / contractors","Insurance","Licences / permits","Marketing",
+      "Software / subscriptions","Equipment","Repairs / maintenance","Professional fees",
+      "Bank / card fees","Transport / vehicle","Training","Other"],
+    defaults:{asset:"Operating cash",liab:"Business credit card",income:"Other income",expense:"Other"}}
+};
+const GOAL_SET={personal:"personal",other:"personal",startup:"business",business:"business"};
+const catsFor=()=>CAT_SETS[GOAL_SET[state.profile&&state.profile.goal]||"personal"];
 const SPEND_KINDS=["essential","discretionary"];
+
+/* Meaning travels WITH the category instead of being hardcoded in the functions that need it.
+   `group` drives the Overview Invested/Cash tiles and the tape; `liquid` drives the allocation
+   panel's cash+brokerage readout. A category absent from this map has no group and is simply not
+   counted — exactly how an unrecognised category behaved before.
+
+   Every goal's asset list needs at least one `cash` and one `invested` category, or those two
+   Overview tiles read $0 on a full ledger and look broken. That is why the business set carries
+   "Reserves / investments". */
+const CAT_META={
+  Brokerage:{group:"invested",liquid:true}, Cash:{group:"cash",liquid:true},
+  Retirement:{group:"invested"}, Crypto:{group:"invested"},
+  "Operating cash":{group:"cash",liquid:true}, "Business savings":{group:"cash",liquid:true},
+  "Reserves / investments":{group:"invested",liquid:true}
+};
 const CAT_COLOR={Brokerage:"var(--blue)",Cash:"var(--up)",Retirement:"var(--violet)",
   Vehicle:"var(--amber)","Real estate":"var(--peach)",Crypto:"var(--down)",
   Collectibles:"var(--peach)","Precious metals":"var(--amber)","Business equity":"var(--blue)",
-  "Life insurance":"var(--violet)","HSA / FSA":"var(--up)",Other:"var(--muted)"};
+  "Life insurance":"var(--violet)","HSA / FSA":"var(--up)",Other:"var(--muted)",
+  "Operating cash":"var(--up)","Business savings":"var(--up)","Reserves / investments":"var(--blue)",
+  "Accounts receivable":"var(--violet)",Inventory:"var(--peach)",Equipment:"var(--amber)",
+  Property:"var(--peach)"};
 const CAT_PALETTE=["var(--blue)","var(--violet)","var(--peach)","var(--up)","var(--down)","var(--amber)"];
 function colorForCat(c){
   if(CAT_COLOR[c])return CAT_COLOR[c];
@@ -874,6 +924,39 @@ function seedBudget(){
 }
 /* @variant:end seedBudget */
 
+// The business equivalent of the seedBudget() template above. It lives OUTSIDE the @variant block
+// on purpose: build.py rewrites that block per build, and this must survive all three.
+// Amounts are zero because the only caller is onboarding, which runs on a fresh install — the
+// demo build ships onboarded:true and never reaches it.
+function businessBudget(){
+  const inc=(name,cat,optional)=>({id:uid(),name,cat,amount:0,optional:!!optional,notes:""});
+  const exp=(name,cat,kind,optional)=>({id:uid(),name,cat,amount:0,limit:0,kind,optional:!!optional,notes:""});
+  return {
+    income:[
+      inc("Sales / services","Sales / services",false),
+      inc("Product sales","Product sales",true),
+      inc("Tips","Tips",true),
+      inc("Other income","Other income",true)
+    ],
+    expenses:[
+      exp("Rent / premises","Rent / premises","essential"),
+      exp("Utilities","Utilities","essential"),
+      exp("Supplies / materials","Supplies / materials","essential"),
+      exp("Payroll / contractors","Payroll / contractors","essential",true),
+      exp("Insurance","Insurance","essential"),
+      exp("Licences / permits","Licences / permits","essential",true),
+      exp("Software / subscriptions","Software / subscriptions","essential"),
+      exp("Bank / card fees","Bank / card fees","essential"),
+      exp("Marketing","Marketing","discretionary"),
+      exp("Equipment","Equipment","discretionary",true),
+      exp("Repairs / maintenance","Repairs / maintenance","discretionary",true),
+      exp("Professional fees","Professional fees","discretionary",true),
+      exp("Training","Training","discretionary",true)
+    ],
+    assumptions:{rate:7,years:30}
+  };
+}
+
 /* ---------- persistence ---------- */
 let state, canPersist=true;
 
@@ -928,7 +1011,7 @@ function sanitizeState(d){
   s.autoRefresh=sPick(o.autoRefresh,["off","stale","always"],"off");
   s.lastFetch=sStr(o.lastFetch,40);
 
-  // cat stays a free string, not an ASSET_CATS allowlist — the Overview allocation panel is
+  // cat stays a free string, not a CAT_SETS allowlist — the Overview allocation panel is
   // documented to render whatever category string an asset carries, and colorForCat() already
   // handles unknown ones. It is escaped at render time.
   const holding=r=>({id:uid(),name:sStr(r&&r.name),cat:sStr(r&&r.cat,60),
@@ -990,8 +1073,15 @@ const sum=arr=>arr.reduce((a,b)=>a+(+b.value||0),0);
 const totalAssets=()=>sum(state.assets);
 const totalLiab=()=>sum(state.liabilities);
 const netWorth=()=>totalAssets()-totalLiab();
-const invested=()=>state.assets.filter(a=>["Brokerage","Retirement","Crypto"].includes(a.cat)).reduce((s,a)=>s+(+a.value||0),0);
-const cash=()=>state.assets.filter(a=>a.cat==="Cash").reduce((s,a)=>s+(+a.value||0),0);
+// Driven by CAT_META, not by category names, so a goal that renames its categories keeps these
+// tiles meaningful. meta() tolerates an unmapped category — it just contributes to neither.
+const meta=c=>CAT_META[c]||{};
+const sumAssets=pred=>state.assets.filter(pred).reduce((s,a)=>s+(+a.value||0),0);
+const invested=()=>sumAssets(a=>meta(a.cat).group==="invested");
+const cash=()=>sumAssets(a=>meta(a.cat).group==="cash");
+// what the user could reach this week — cash plus the liquid end of "invested"
+// (a brokerage account, not a retirement account or a locked-up holding)
+const accessibleAssets=()=>sumAssets(a=>meta(a.cat).liquid);
 const sumAmt=arr=>arr.reduce((s,r)=>s+(+r.amount||0),0);
 const totalCashIn=()=>sumAmt(state.budget.income);
 const totalCashOut=()=>sumAmt(state.budget.expenses);
@@ -1223,9 +1313,9 @@ function renderOverview(){
     sumEl.hidden=true;
   }else{
     const top3=rows.slice(0,3).reduce((s,[,v])=>s+v,0);
-    // named for the categories it actually covers — invested() also bundles
-    // Retirement and Crypto, which aren't readily accessible
-    const accessible=cash()+(byCat["Brokerage"]||0);
+    // the liquid subset — invested() also bundles Retirement and Crypto, which aren't
+    // readily accessible. Which categories count is CAT_META's `liquid` flag, not a name here.
+    const accessible=accessibleAssets();
     const pc=v=>(v/ta*100).toFixed(0)+"%";
     sumEl.innerHTML=
       `<div><div class="sl">${esc(t("alloc.largest"))}</div>
@@ -1259,12 +1349,20 @@ function renderOverview(){
 function cellInput(val,cls,onCommit,attrs=""){
   return `<input class="cell ${cls}" value="${esc(val==null?"":val)}" ${attrs}>`;
 }
+// A category the active set doesn't list is PRESERVED and shown first, never dropped. Both an
+// import and a goal switch can leave a row carrying an unlisted category; without this the
+// select would render its first option instead while state still held the real value, and the
+// user's next touch of that select would overwrite it with no undo.
+function catOptions(cats,cur){
+  const list=(cur==null||cur===""||cats.includes(cur))?cats:[cur,...cats];
+  return list.map(c=>`<option ${c===cur?"selected":""}>${esc(c)}</option>`).join("");
+}
 function renderLedger(){
   const ab=document.getElementById("assetBody");
-  ab.innerHTML=state.assets.length?state.assets.map(a=>rowHTML(a,ASSET_CATS,"asset")).join(""):
+  ab.innerHTML=state.assets.length?state.assets.map(a=>rowHTML(a,catsFor().assets,"asset")).join(""):
     `<tr><td colspan="5"><div class="empty">No assets yet. Hit <b>+ Add asset</b> to log your first account.</div></td></tr>`;
   const lb=document.getElementById("liabBody");
-  lb.innerHTML=state.liabilities.length?state.liabilities.map(a=>rowHTML(a,LIAB_CATS,"liab")).join(""):
+  lb.innerHTML=state.liabilities.length?state.liabilities.map(a=>rowHTML(a,catsFor().liab,"liab")).join(""):
     `<tr><td colspan="5"><div class="empty">No liabilities logged. That's a good place to be — add one only if you owe it.</div></td></tr>`;
   document.getElementById("assetTotal").textContent=fmt2(totalAssets());
   document.getElementById("liabTotal").textContent=fmt2(totalLiab());
@@ -1272,7 +1370,7 @@ function renderLedger(){
   wireCells();
 }
 function rowHTML(item,cats,kind){
-  const opts=cats.map(c=>`<option ${c===item.cat?"selected":""}>${esc(c)}</option>`).join("");
+  const opts=catOptions(cats,item.cat);
   return `<tr data-id="${esc(item.id)}" data-kind="${esc(kind)}">
     <td>${cellInput(item.name,"","name",'data-f="name"')}</td>
     <td><select class="cell" data-f="cat">${opts}</select></td>
@@ -1307,8 +1405,8 @@ function wireCells(){
 const budgetArr=section=>section==="income"?state.budget.income:state.budget.expenses;
 function budgetRowHTML(item,section){
   const isInc=section==="income";
-  const cats=isInc?INCOME_CATS:EXPENSE_CATS;
-  const opts=cats.map(c=>`<option ${c===item.cat?"selected":""}>${esc(c)}</option>`).join("");
+  const cats=isInc?catsFor().income:catsFor().expense;
+  const opts=catOptions(cats,item.cat);
   const dim=item.optional&&!(+item.amount)?" dim":"";
   const over=!isInc&&(+item.limit>0)&&(+item.amount>+item.limit);
   const limitCell=isInc?`<td class="na">—</td>`:
@@ -1360,8 +1458,8 @@ function wireBudgetRows(){
       if(add)add.addEventListener("click",()=>{
         const s=add.dataset.addbudget;
         budgetArr(s).push(s==="income"
-          ?{id:uid(),name:"",cat:"Other income",amount:0,optional:false,notes:""}
-          :{id:uid(),name:"",cat:"Other",amount:0,limit:0,kind:"discretionary",optional:false,notes:""});
+          ?{id:uid(),name:"",cat:catsFor().defaults.income,amount:0,optional:false,notes:""}
+          :{id:uid(),name:"",cat:catsFor().defaults.expense,amount:0,limit:0,kind:"discretionary",optional:false,notes:""});
         save();renderBudget();
       });
       return;
@@ -1964,6 +2062,8 @@ function setSectionCurrent(){
   document.getElementById("shCurAuto").textContent=m?m[1]:"Off";
   document.getElementById("shCurLang").textContent=(LANGS[state.lang]||LANGS.en).name;
   document.getElementById("shCurCur").textContent=state.currency||"USD";
+  const g=GOALS[state.profile&&state.profile.goal]||GOALS.personal;
+  document.getElementById("shCurGoal").textContent=g.label;
 }
 // sec=null collapses everything; otherwise exactly one section is open
 function openSetSection(sec){
@@ -1998,6 +2098,26 @@ function renderAutoRefreshList(){
     closeThemeMenu();
     const m=AUTO_MODES.find(x=>x[0]===state.autoRefresh);
     toast("Auto-refresh: "+m[1].toLowerCase()+".");
+  }));
+}
+// What the user is tracking. Changing it swaps the ledger/budget category lists (see CAT_SETS)
+// and the onboarding tour copy — it NEVER edits a row. A row whose category the new set doesn't
+// list keeps it, and catOptions() shows it at the top of the dropdown so it survives.
+function renderGoalList(){
+  const cur=(state.profile&&state.profile.goal)||"personal";
+  document.getElementById("goalItems").innerHTML=Object.entries(GOALS).map(([id,g])=>
+    `<button class="theme-opt" role="menuitemradio" data-goal="${id}" aria-current="${id===cur}">
+      <span class="tn">${esc(g.label)}<small>${esc(g.sub)}</small></span>
+      <span class="chk">✓</span></button>`).join("");
+  // scoped to [data-goal], not the shared .theme-opt class — a broad selector here would clear
+  // the other pickers' checkmarks, which is a bug this menu has had before
+  document.querySelectorAll("[data-goal]").forEach(b=>b.addEventListener("click",()=>{
+    state.profile.goal=b.dataset.goal;save();
+    document.querySelectorAll("[data-goal]").forEach(x=>x.setAttribute("aria-current",String(x===b)));
+    setSectionCurrent();
+    renderLedger();renderBudget();   // pick up the new category lists; row data is untouched
+    closeThemeMenu();
+    toast("Tracking: "+GOALS[state.profile.goal].label.toLowerCase()+".");
   }));
 }
 // Fire-and-forget: the Treasury endpoint can take ~9-15s, so never block first paint on it.
@@ -2148,11 +2268,13 @@ function playIntro(){
 /* ---------- first-run onboarding: welcome screen + guided hints ---------- */
 // A single self-contained HTML file can't delete its own source, so "runs once" is a
 // persisted flag: after state.onboarded is set, none of this executes again.
+// `sub` names the category set behind each goal — GOAL_SET maps these keys to CAT_SETS, and
+// the picker shows it so the choice reads as a concrete change rather than a mood.
 const GOALS={
-  personal:{label:"Personal finance"},
-  startup:{label:"Start-up"},
-  business:{label:"Personal business"},
-  other:{label:"Something else"}
+  personal:{label:"Personal finance",sub:"personal categories"},
+  startup:{label:"Start-up",sub:"business categories"},
+  business:{label:"Personal business",sub:"business categories"},
+  other:{label:"Something else",sub:"personal categories"}
 };
 function applyGreeting(){
   const el=document.getElementById("brandWho");
@@ -2192,6 +2314,10 @@ function showWelcome(){
     state.profile.goal=document.getElementById("wcGoal").value;
     state.onboarded=true;
     if(!withTour)state.hintsDone=true;
+    // load() seeds the budget BEFORE the goal is known, so a business user would otherwise land on
+    // Rent / Groceries / Eating out. Swap the template now, while it is still untouched seed data.
+    // Only here — a later goal change from settings must never overwrite real rows.
+    if(GOAL_SET[state.profile.goal]==="business")state.budget=businessBudget();
     save();
     applyGreeting();
     document.body.classList.remove("intro-run");
@@ -2217,19 +2343,23 @@ const HINTS=[
   {sel:'#assetBody tr:first-child [data-f="name"]',title:"Every cell is editable",body:{
     personal:"Click straight into any cell to change it. Start by making these rows match the accounts you actually hold — rename, retype a value, or clear what doesn't apply.",
     startup:"Click straight into any cell to change it. Swap these placeholder rows for your real balance sheet — cash in the bank, receivables, equipment.",
-    business:"Click straight into any cell to change it. Replace these rows with your business accounts — operating cash, receivables, equipment."}},
+    business:"Click straight into any cell to change it. Replace these rows with your business accounts — operating cash, receivables, equipment.",
+    other:"Click straight into any cell to change it. Make these rows match whatever you're actually tracking — rename them, retype a value, or clear what doesn't apply."}},
   {sel:'#assetBody tr:first-child [data-f="cat"]',title:"Categorise each row",body:{
     personal:"The category drives your allocation breakdown on Overview. Cash, Brokerage and Retirement are the ones that matter most early on.",
     startup:"The category drives your allocation breakdown on Overview. Keep runway in Cash so you can see months-of-cash at a glance.",
-    business:"The category drives your allocation breakdown on Overview. Keep operating cash separate from equipment and receivables."}},
+    business:"The category drives your allocation breakdown on Overview. Keep operating cash separate from equipment and receivables.",
+    other:"The category drives your allocation breakdown on Overview. Group similar rows under the same category and the split takes care of itself."}},
   {sel:'#btnAddAsset',title:"Add your own rows",body:{
     personal:"Add anything that's missing — a savings account, a vehicle, a property. Liabilities work the same way in the panel below.",
     startup:"Add what's missing — your funding round, a grant, outstanding invoices. Loans and convertible notes go in Liabilities below.",
-    business:"Add what's missing — inventory, a business vehicle, outstanding invoices. Loans and credit lines go in Liabilities below."}},
+    business:"Add what's missing — inventory, a business vehicle, outstanding invoices. Loans and credit lines go in Liabilities below.",
+    other:"Add a row for anything this list is missing. Anything you owe goes in Liabilities, in the panel below."}},
   {sel:'#refreshBtn',title:"Log your first snapshot",body:{
     personal:"Once your numbers look right, hit Refresh on the Overview tab. That logs a dated point, and your net-worth chart builds from there.",
     startup:"Once your numbers look right, hit Refresh on the Overview tab. Each snapshot is a dated point — that's how you'll watch runway move.",
-    business:"Once your numbers look right, hit Refresh on the Overview tab. Each snapshot is a dated point your equity curve builds from."}}
+    business:"Once your numbers look right, hit Refresh on the Overview tab. Each snapshot is a dated point your equity curve builds from.",
+    other:"Once your numbers look right, hit Refresh on the Overview tab. That logs a dated point, and the chart builds itself from there."}}
 ];
 // The end-user build seeds an empty ledger, so the first two steps above have nothing to point
 // at — showHint()'s skip loop would silently drop them and leave a two-step tour whose copy
@@ -2239,7 +2369,8 @@ const HINTS_EMPTY=[
   {sel:'#btnAddAsset',title:"Start with one account",body:{
     personal:"Your ledger starts empty. Add your first account here — a checking balance is the easiest place to begin — then fill in the row that appears. Every cell is editable.",
     startup:"Your ledger starts empty. Add your first line here — cash in the bank is the easiest place to begin — then fill in the row that appears. Every cell is editable.",
-    business:"Your ledger starts empty. Add your first account here — operating cash is the easiest place to begin — then fill in the row that appears. Every cell is editable."}},
+    business:"Your ledger starts empty. Add your first account here — operating cash is the easiest place to begin — then fill in the row that appears. Every cell is editable.",
+    other:"Your ledger starts empty. Add your first row here — whatever you most want to keep an eye on — then fill it in. Every cell is editable."}},
   HINTS[3]
 ];
 // which list the tour is walking; set by startHints() from the state it finds
@@ -2312,8 +2443,13 @@ function showHint(i){
 }
 function startHints(){
   if(state.hintsDone)return;
-  hintSteps=state.assets.length?HINTS:HINTS_EMPTY;
   if(currentTab!=="ledger")show("ledger");
+  // Resolve the list AFTER switching to the ledger, then drop steps whose target isn't on the
+  // page. showHint()'s skip loop would handle those too, but it skips without renumbering, so a
+  // dropped step made the counter read "1 / 4, 3 / 4, 4 / 4". Filtering up front keeps it honest;
+  // the skip loop stays as a safety net for a target that disappears mid-tour.
+  hintSteps=(state.assets.length?HINTS:HINTS_EMPTY).filter(h=>document.querySelector(h.sel));
+  if(!hintSteps.length){endHints();return;}
   hintReposition=()=>{const h=hintSteps[hintIdx];if(h)placeHintCard(document.querySelector(h.sel));};
   window.addEventListener("scroll",hintReposition,true);
   window.addEventListener("resize",hintReposition);
@@ -2328,6 +2464,7 @@ function boot(rerender){
   renderAutoRefreshList();
   renderLangList();
   renderCurList();
+  renderGoalList();
   setSectionCurrent();
   applyChromeI18n();
   applyGreeting();
@@ -2402,8 +2539,8 @@ function init(){
   // add rows
   document.querySelectorAll("[data-add]").forEach(btn=>btn.addEventListener("click",()=>{
     const k=btn.dataset.add;
-    if(k==="asset"){state.assets.push({id:uid(),name:"",cat:"Brokerage",value:0,notes:""});save();renderLedger();}
-    if(k==="liab"){state.liabilities.push({id:uid(),name:"",cat:"Credit card",value:0,notes:""});save();renderLedger();}
+    if(k==="asset"){state.assets.push({id:uid(),name:"",cat:catsFor().defaults.asset,value:0,notes:""});save();renderLedger();}
+    if(k==="liab"){state.liabilities.push({id:uid(),name:"",cat:catsFor().defaults.liab,value:0,notes:""});save();renderLedger();}
     if(k==="cal"){state.calendar.push({id:uid(),date:today(),event:"",imp:"Med",notes:""});save();renderCalendar();}
   }));
 
