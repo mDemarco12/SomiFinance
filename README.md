@@ -65,8 +65,7 @@ SomiFinance is a single-page dashboard for tracking your net worth alongside the
 - Keyboard shortcuts (`1`–`6` to switch tabs, `Esc` to close menus)
 - Layout that follows your window — the shell, tiles and type scale up on a large monitor and collapse to a single column on a small one
 - Reset your instance to Factory Specs with an integrated Reset button within the settings (and you have the option to back-up your data, and you must type 'Yes' before the reset)
-
-#Reset Screen
+- 
 <img width="665" height="598" alt="Screenshot 2026-09-07 at 11 34 42" src="https://github.com/user-attachments/assets/c783c2af-1bd0-4c39-b9b5-d5f0d374a98d" />
 
 
