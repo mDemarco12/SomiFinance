@@ -223,7 +223,7 @@ function seed(){
     updated:today(),
     onboarded:%s,
     hintsDone:%s,
-    profile:{name:%s,goal:"personal"},   // goal keys: see GOALS
+    profile:{name:%s,goal:"personal",nameColor:"cyan"},   // goal keys: see GOALS
     theme:"terminal",
     lang:"en",
     currency:"USD",

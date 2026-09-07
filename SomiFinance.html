@@ -27,7 +27,7 @@
 -->
 <meta http-equiv="Content-Security-Policy" content="
   default-src 'none';
-  script-src 'sha256-LEfI6wtiATeJWC0ehfYamH0fHWvD5leT9b99SJsRVXU=' 'sha256-DRwD0CCj91OPdE10Xecb/3sYi86R2gZB67l1UCPb0Og=' https://s3.tradingview.com;
+  script-src 'sha256-LEfI6wtiATeJWC0ehfYamH0fHWvD5leT9b99SJsRVXU=' 'sha256-lKSznAMvH0UGENHp+pYwuD68pDr7ktwz/J+UjptTkck=' https://s3.tradingview.com;
   style-src 'unsafe-inline';
   img-src data: https:;
   connect-src https://home.treasury.gov https://api.bls.gov https://open.er-api.com;
@@ -44,6 +44,9 @@
     --ink:#e8e3d6; --muted:#8b94a3; --faint:#5b6472;
     --amber:#e0a83b; --amber-dim:#8a6a24;
     --up:#4fb477; --down:#e5484d; --blue:#4a90d9; --violet:#9a8cf0; --peach:#d97757;
+    /* --cyan is the default brand-name colour. Terminal ships literal #00FFFF; every other
+       theme supplies its own, because pure cyan scores 1.11 contrast on Latte's light topbar. */
+    --cyan:#00FFFF;
     --tape-bg:#0a0d12;
     --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
     --sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
@@ -99,7 +102,8 @@
   .brand{display:flex;flex-direction:column;line-height:1.1}
   .brand .eyebrow{font-family:var(--mono);font-size:10px;letter-spacing:.28em;text-transform:uppercase;color:var(--amber)}
   .brand .name{font-size:18px;font-weight:600;letter-spacing:.02em}
-  #brandWho{color:var(--muted);font-weight:400}
+  /* colour set by applyGreeting() from profile.nameColor; this is the fallback */
+  #brandWho{color:var(--cyan);font-weight:400}
   #brandWho:empty{display:none}
   .spacer{flex:1}
   .act{background:var(--panel-2);border:1px solid var(--line);color:var(--ink);padding:7px 13px;border-radius:6px;font-size:13px;cursor:pointer;display:inline-flex;align-items:center;gap:6px}
@@ -153,6 +157,9 @@
   .theme-opt .tn{flex:1}
   .theme-opt .tn small{display:block;color:var(--muted);font-size:11px}
   .theme-opt .chk{color:var(--amber);font-size:13px;opacity:0}
+  .set-input{width:100%;background:var(--panel-2);border:1px solid var(--line);color:var(--ink);
+    padding:8px 10px;border-radius:8px;font-size:13px;font-family:inherit;margin-bottom:6px}
+  .set-input:focus{outline:none;border-color:var(--amber)}
   .theme-opt[aria-current="true"] .chk{opacity:1}
 
   /* ticker tape */
@@ -472,6 +479,12 @@
           <span class="sh-name">◎ Tracking</span><span class="sh-cur" id="shCurGoal"></span><span class="sh-caret">›</span>
         </button>
         <div class="set-body" id="goalItems" hidden></div>
+      </div>
+      <div class="set-sec">
+        <button class="set-head" type="button" data-sec="name" aria-expanded="false" aria-controls="nameItems">
+          <span class="sh-name">✎ Your name</span><span class="sh-cur" id="shCurName"></span><span class="sh-caret">›</span>
+        </button>
+        <div class="set-body" id="nameItems" hidden></div>
       </div>
       <!-- Not a .set-sec: openSetSection() treats every .set-head as an accordion panel, and a
            one-shot destructive action is not a picker. Plain button, set apart by a rule. -->
@@ -879,7 +892,7 @@ function seed(){
     updated:today(),
     onboarded:false,
     hintsDone:false,
-    profile:{name:"",goal:"personal"},   // goal keys: see GOALS
+    profile:{name:"",goal:"personal",nameColor:"cyan"},   // goal keys: see GOALS
     theme:"terminal",
     lang:"en",
     currency:"USD",
@@ -1015,7 +1028,8 @@ function sanitizeState(d){
   s.onboarded=o.onboarded===true;
   s.hintsDone=o.hintsDone===true;
   const p=(o.profile&&typeof o.profile==="object")?o.profile:{};
-  s.profile={name:sStr(p.name,40),goal:GOALS[p.goal]?p.goal:"personal"};
+  s.profile={name:sStr(p.name,40),goal:GOALS[p.goal]?p.goal:"personal",
+    nameColor:sPick(p.nameColor,NAME_COLOR_IDS,"cyan")};
   s.theme=THEMES[o.theme]?o.theme:"terminal";
   s.lang=LANGS[o.lang]?o.lang:"en";
   s.currency=CURRENCIES[o.currency]?o.currency:"USD";
@@ -1238,28 +1252,33 @@ function applyChromeI18n(){
 
 /* ---------- themes ---------- */
 // token order: bg, panel, panel-2, line, ink, muted, faint, accent, accent-dim,
-//              up, down, blue, violet, peach, tape-bg
+//              up, down, blue, violet, peach, cyan, tape-bg
 const THEMES={
   terminal:{name:"Terminal",sub:"default · amber on ink",vars:{
     bg:"#0d1015","panel":"#141922","panel-2":"#1a212c",line:"#232c39",ink:"#e8e3d6",
     muted:"#8b94a3",faint:"#5b6472",amber:"#e0a83b","amber-dim":"#8a6a24",
-    up:"#4fb477",down:"#e5484d",blue:"#4a90d9",violet:"#9a8cf0",peach:"#d97757","tape-bg":"#0a0d12"}},
+    up:"#4fb477",down:"#e5484d",blue:"#4a90d9",violet:"#9a8cf0",peach:"#d97757",
+    cyan:"#00FFFF","tape-bg":"#0a0d12"}},
   mocha:{name:"Catppuccin Mocha",sub:"dark · mauve accent",vars:{
     bg:"#181825","panel":"#1e1e2e","panel-2":"#313244",line:"#45475a",ink:"#cdd6f4",
     muted:"#a6adc8",faint:"#6c7086",amber:"#cba6f7","amber-dim":"#7f849c",
-    up:"#a6e3a1",down:"#f38ba8",blue:"#89b4fa",violet:"#b4befe",peach:"#fab387","tape-bg":"#11111b"}},
+    up:"#a6e3a1",down:"#f38ba8",blue:"#89b4fa",violet:"#b4befe",peach:"#fab387",
+    cyan:"#89dceb","tape-bg":"#11111b"}},
   macchiato:{name:"Catppuccin Macchiato",sub:"dark · mauve accent",vars:{
     bg:"#1e2030","panel":"#24273a","panel-2":"#363a4f",line:"#494d64",ink:"#cad3f5",
     muted:"#a5adcb",faint:"#6e738d",amber:"#c6a0f6","amber-dim":"#8087a2",
-    up:"#a6da95",down:"#ed8796",blue:"#8aadf4",violet:"#b7bdf8",peach:"#f5a97f","tape-bg":"#181926"}},
+    up:"#a6da95",down:"#ed8796",blue:"#8aadf4",violet:"#b7bdf8",peach:"#f5a97f",
+    cyan:"#91d7e3","tape-bg":"#181926"}},
   frappe:{name:"Catppuccin Frappé",sub:"dark · mauve accent",vars:{
     bg:"#292c3c","panel":"#303446","panel-2":"#414559",line:"#51576d",ink:"#c6d0f5",
     muted:"#a5adce",faint:"#737994",amber:"#ca9ee6","amber-dim":"#838ba7",
-    up:"#a6d189",down:"#e78284",blue:"#8caaee",violet:"#babbf1",peach:"#ef9f76","tape-bg":"#232634"}},
+    up:"#a6d189",down:"#e78284",blue:"#8caaee",violet:"#babbf1",peach:"#ef9f76",
+    cyan:"#99d1db","tape-bg":"#232634"}},
   latte:{name:"Catppuccin Latte",sub:"light · mauve accent",vars:{
     bg:"#dce0e8","panel":"#eff1f5","panel-2":"#e6e9ef",line:"#ccd0da",ink:"#4c4f69",
     muted:"#6c6f85",faint:"#9ca0b0",amber:"#8839ef","amber-dim":"#8c8fa1",
-    up:"#40a02b",down:"#d20f39",blue:"#1e66f5",violet:"#7287fd",peach:"#fe640b","tape-bg":"#e6e9ef"}}
+    up:"#40a02b",down:"#d20f39",blue:"#1e66f5",violet:"#7287fd",peach:"#fe640b",
+    cyan:"#179299","tape-bg":"#e6e9ef"}}
 };
 function applyTheme(id){
   const t=THEMES[id]||THEMES.terminal;
@@ -2088,6 +2107,8 @@ function setSectionCurrent(){
   document.getElementById("shCurCur").textContent=state.currency||"USD";
   const g=GOALS[state.profile&&state.profile.goal]||GOALS.personal;
   document.getElementById("shCurGoal").textContent=g.label;
+  const nm=((state.profile&&state.profile.name)||"").trim();
+  document.getElementById("shCurName").textContent=nm||"Not set";
 }
 // sec=null collapses everything; otherwise exactly one section is open
 function openSetSection(sec){
@@ -2122,6 +2143,34 @@ function renderAutoRefreshList(){
     closeThemeMenu();
     const m=AUTO_MODES.find(x=>x[0]===state.autoRefresh);
     toast("Auto-refresh: "+m[1].toLowerCase()+".");
+  }));
+}
+// The name shown beside the brand, and its colour. Editing here writes straight through to the
+// topbar — before this the name could only be set once, on the welcome screen.
+function renderNameList(){
+  const cur=(state.profile&&state.profile.nameColor)||"cyan";
+  const nm=(state.profile&&state.profile.name)||"";
+  document.getElementById("nameItems").innerHTML=
+    `<input class="set-input" id="nameInput" type="text" maxlength="40" placeholder="Your name"
+      autocomplete="off" aria-label="Your name" value="${esc(nm)}">`+
+    NAME_COLORS.map(c=>
+    `<button class="theme-opt" role="menuitemradio" data-namecolor="${c.id}" aria-current="${c.id===cur}">
+      <span class="sw"><i style="background:var(--${c.id})"></i></span>
+      <span class="tn">${c.label}<small>${esc(c.sub)}</small></span>
+      <span class="chk">✓</span></button>`).join("");
+  const input=document.getElementById("nameInput");
+  input.addEventListener("input",()=>{
+    state.profile.name=input.value.slice(0,40);save();
+    applyGreeting();setSectionCurrent();
+  });
+  // typing here must not reach the global 1-6 tab shortcuts or the menu's outside-click closer
+  input.addEventListener("click",e=>e.stopPropagation());
+  // scoped to [data-namecolor], not the shared .theme-opt class — a broad selector clears the
+  // other pickers' checkmarks, which this menu has been bitten by before
+  document.querySelectorAll("[data-namecolor]").forEach(b=>b.addEventListener("click",()=>{
+    state.profile.nameColor=b.dataset.namecolor;save();
+    document.querySelectorAll("[data-namecolor]").forEach(x=>x.setAttribute("aria-current",String(x===b)));
+    applyGreeting();
   }));
 }
 // What the user is tracking. Changing it swaps the ledger/budget category lists (see CAT_SETS)
@@ -2294,6 +2343,17 @@ function playIntro(){
 // persisted flag: after state.onboarded is set, none of this executes again.
 // `sub` names the category set behind each goal — GOAL_SET maps these keys to CAT_SETS, and
 // the picker shows it so the choice reads as a concrete change rather than a mood.
+// The four brand-name colours. Each id IS a theme token name, so the choice is stored as a token
+// and re-resolves on every theme switch — no recolouring code, and every value is one the active
+// theme already vouches for. Contrast on --panel across all five themes: cyan 3.31-14.05,
+// accent 4.79-8.25, green 2.96-11.03, blue 4.34-7.79 (threshold 3.0 for 18px/600 text).
+const NAME_COLORS=[
+  {id:"cyan",label:"Cyan",sub:"#00FFFF on Terminal"},
+  {id:"amber",label:"Accent",sub:"follows the theme accent"},
+  {id:"up",label:"Green",sub:"the gain colour"},
+  {id:"blue",label:"Blue",sub:"cool contrast"}
+];
+const NAME_COLOR_IDS=NAME_COLORS.map(c=>c.id);
 const GOALS={
   personal:{label:"Personal finance",sub:"personal categories"},
   startup:{label:"Start-up",sub:"business categories"},
@@ -2305,6 +2365,10 @@ function applyGreeting(){
   if(!el)return;
   const n=(state.profile&&state.profile.name||"").trim();
   el.textContent=n?" · "+n:"";
+  // an inline var() reference stays live, so applyTheme() rewriting the custom property
+  // recolours the name on a theme switch with no extra wiring
+  const tok=(state.profile&&state.profile.nameColor)||"cyan";
+  el.style.color="var(--"+(NAME_COLOR_IDS.includes(tok)?tok:"cyan")+")";
 }
 function showWelcome(){
   document.body.classList.add("intro-run");
@@ -2571,6 +2635,7 @@ function boot(rerender){
   renderLangList();
   renderCurList();
   renderGoalList();
+  renderNameList();
   setSectionCurrent();
   applyChromeI18n();
   applyGreeting();
