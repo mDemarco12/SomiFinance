@@ -88,12 +88,13 @@ Chart.js is bundled directly into the file rather than loaded from a CDN, so **o
 | TradingView | First time you open the Economic Calendar tab | The live calendar widget |
 | U.S. Treasury + BLS | Refresh on Macro Signals (or on load, if you turn auto-refresh on) | Latest yields and CPI |
 | open.er-api.com | Only when a non-USD currency is selected | Exchange rates |
+| Your own machine (`127.0.0.1`/`localhost`) | Only when you open the ✦ assistant panel and send a message | Local Ollama chat — never leaves your computer |
 
 Each fails gracefully — if a request doesn't go through, the app keeps working and falls back to manual entry or the last cached values.
 
 Two things enforce that rather than just promising it:
 
-- **A Content-Security-Policy** in the page head names the only three hosts the app may contact, so even a bug or an injection has nowhere to send your figures. Its `script-src` lists SHA-256 hashes instead of allowing inline script, which means injected event handlers won't run at all.
+- **A Content-Security-Policy** in the page head names every host the app may contact — three remote hosts, plus loopback ports for the optional local assistant — so even a bug or an injection has nowhere to send your figures off this machine. Its `script-src` lists SHA-256 hashes instead of allowing inline script, which means injected event handlers won't run at all. The loopback allowance is unroutable off-machine, but it does widen what injected script could reach on your own machine — see `PROJECT_STATUS.md` for the honest tradeoff.
 - **The TradingView widget is sandboxed.** It's third-party code, so it loads in an iframe with no same-origin access — it can't read your saved data or touch the page. Opening the Calendar tab does contact TradingView's servers, but they receive nothing about you beyond the request itself.
 
 Imported backups are treated as untrusted input: every field is validated against a whitelist and all row ids are regenerated, and nothing is written to storage until the imported file has rendered cleanly.

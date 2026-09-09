@@ -58,8 +58,32 @@ The build aborts if a file does not contain exactly two attribute-less `<script>
 something in the file now spells out a script tag literally — which is why `ensureTradingViewWidget()`
 assembles its tag as `'<'+'script'`.
 
-`connect-src` names the only three hosts the page may contact (Treasury, BLS, `open.er-api.com`).
-Adding a data source means adding it there too, or the fetch fails with no visible error.
+`connect-src` names every host the page may contact: three remote hosts (Treasury, BLS,
+`open.er-api.com`) plus `http://127.0.0.1:*` and `http://localhost:*` for the optional local
+assistant. Adding a data source means adding it there too, or the fetch fails with no visible error.
+
+### The assistant's loopback CSP entry — a real widening, honestly bounded
+
+`connect-src` also allows `http://127.0.0.1:*` and `http://localhost:*`, added so the ✦ assistant
+panel can talk to a local Ollama server. This is worth being precise about:
+
+- **It creates no path off the machine.** Both hosts are unroutable, and with `default-src 'none'`
+  this `connect-src` is the entire allowlist — injected script still cannot POST your figures
+  anywhere remote.
+- **It does let injected script reach any other loopback service** on any port, and read the
+  response if that service is CORS-permissive. Pinning to `:11434` would shrink that, but it
+  silently breaks anyone running Ollama on a non-default `OLLAMA_HOST` port, with a blocked fetch
+  and no visible error — the wildcard port is the deliberate tradeoff.
+- The endpoint is also user- and import-editable, so it carries its own second lock:
+  `CHAT_LOOPBACK` in `SomiFinanceDemo.html` regexes it back to `127.0.0.1`/`localhost`/`[::1]` on
+  every load — a crafted backup pointing it at a remote host is rejected before any request is made.
+- Model output is written with `bubble.textContent`, never `innerHTML` — the same XSS-dead-on-
+  arrival property the CSP gives the rest of the app extends to whatever a local model streams back.
+- The chat transcript persists in `state.chat.messages` (capped at 40 messages / 2000 chars each)
+  and rides along in every Export, exactly like every other field — see **Key facts** below.
+- `connect-src` was never the only exfil channel — `img-src data: https:` has always permitted an
+  injected tracking pixel. `script-src`'s hashes-with-no-`'unsafe-inline'` is what actually kills an
+  injection before it can build that tag.
 
 ### The TradingView widget is sandboxed — never add `allow-same-origin`
 
@@ -289,7 +313,7 @@ so a same-morning refresh legitimately returns the prior business day.
 ## Key facts for future me
 
 - Everything lives in one `<script>` block at the bottom of the file.
-- State object shape: `{ updated, onboarded, hintsDone, profile{name,goal,nameColor}, theme, lang, currency, fx{rates{},lastFetch}, calendarOrder[], liveCalHeight, autoRefresh, lastFetch, assets[], liabilities[], history[], yields[], inflation[], calendar[], budget{} }`. No category-management fields — categories are just strings on each asset/liability. **All monetary values are stored in USD regardless of the selected display currency.**
+- State object shape: `{ updated, onboarded, hintsDone, profile{name,goal,nameColor}, theme, lang, currency, fx{rates{},lastFetch}, calendarOrder[], liveCalHeight, autoRefresh, lastFetch, assets[], liabilities[], history[], yields[], inflation[], calendar[], goals[], budget{}, chat{ack,endpoint,model,messages[]} }`. No category-management fields — categories are just strings on each asset/liability. **All monetary values are stored in USD regardless of the selected display currency.**
 - **Every new state field needs a line in `sanitizeState()`** — it is the single door into `state` (called by both `load()` and `importJSON()`) and supplies every default, so a field missing from it is silently dropped on the next load. This replaces the old per-scalar `load()` backfills, which are gone. `normalizeBudget()` still plays the same role for the budget block. See **Security posture**.
 - `budget` = `{ income:[{id,name,cat,amount,optional,notes}], expenses:[{id,name,cat,amount,limit,kind,optional,notes}], assumptions:{rate,years} }`, where `kind` ∈ `essential|discretionary`. Categories come from the active goal's `CAT_SETS` entry (personal 11 income / 21 expense; business 7 / 16). **`normalizeBudget()` is the compatibility shim** — called from BOTH `load()` and `importJSON()`; it backfills missing arrays/assumptions/ids and coerces a bad `kind`, so older saves and partial imports don't crash the tab. Any new budget field should get a default there too.
 - `assets`/`liabilities` items: `{ id, name, cat, value, notes }`. Categories come from the active goal's `CAT_SETS` entry (personal 13 assets incl. "Alternative Asset" and "Other" / 6 liabilities; business 10 / 6) — no user-editable category list. `colorForCat(c)` returns the curated color from `CAT_COLOR` when one exists, otherwise a deterministic hash-based color from `CAT_PALETTE`, so any category string (even a stray/legacy one) still renders with a stable color.
