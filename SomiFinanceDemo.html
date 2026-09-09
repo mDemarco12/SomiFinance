@@ -4,8 +4,11 @@
 <meta charset="UTF-8">
 <!--
   Content-Security-Policy. This is what makes the "your data stays here" claim enforced by the
-  browser rather than merely intended: connect-src names the only three hosts this page may talk
-  to, so even a successful injection has nowhere to send your figures.
+  browser rather than merely intended: connect-src names every host this page may talk to — three
+  remote hosts plus the loopback ports a local Ollama assistant listens on — so even a successful
+  injection has nowhere to send your figures off this machine. 127.0.0.1/localhost are unroutable,
+  so the loopback entries add no exfiltration path; they do widen what injected script could reach
+  on your own machine (see PROJECT_STATUS.md "Security posture" for the honest tradeoff).
 
   script-src lists HASHES, not 'unsafe-inline', and that is deliberate. Without 'unsafe-inline'
   the browser refuses injected event-handler attributes (onmouseover=…, onerror=…) outright, so
@@ -24,10 +27,10 @@
 -->
 <meta http-equiv="Content-Security-Policy" content="
   default-src 'none';
-  script-src 'sha256-LEfI6wtiATeJWC0ehfYamH0fHWvD5leT9b99SJsRVXU=' 'sha256-qUzaPWm6r8ldzr1u08ABDcRYCUgPxlaRFWZC8U4JpeQ=' https://s3.tradingview.com;
+  script-src 'sha256-LEfI6wtiATeJWC0ehfYamH0fHWvD5leT9b99SJsRVXU=' 'sha256-JoAFmsof8SeGz3HGmMUv/XrHtqPtxU5ZHezPMoRWpps=' https://s3.tradingview.com;
   style-src 'unsafe-inline';
   img-src data: https:;
-  connect-src https://home.treasury.gov https://api.bls.gov https://open.er-api.com;
+  connect-src https://home.treasury.gov https://api.bls.gov https://open.er-api.com http://127.0.0.1:* http://localhost:*;
   frame-src https://www.tradingview.com https://s.tradingview.com;
   base-uri 'none';
   object-src 'none';
@@ -301,6 +304,16 @@
   .add-row-cell .add-row{margin-top:0}
   tr.add-tr:hover{background:none}
 
+  /* goals — a standalone bar rather than widening .alloc-item .bar, whose flex sizing is
+     scoped to the allocation panel it's stretched to match. */
+  .g-bar{display:block;height:clamp(8px,calc(5px + 0.3vw),13px);background:var(--panel-2);
+    border-radius:5px;overflow:hidden;margin:2px 0 4px}
+  .g-bar > i{display:block;height:100%;border-radius:5px}
+  /* --muted, not --faint: on Latte, --faint (#9ca0b0 on #eff1f5) is ~2.3:1 and fails; --muted
+     (#6c6f85) is ~5.6:1. */
+  .g-sub{display:block;font-family:var(--mono);font-size:var(--t-fine);color:var(--muted)}
+  .cell[type=date]{font-family:var(--mono);font-size:var(--t-mono)}
+
   .net-strip{display:flex;justify-content:space-between;align-items:center;background:var(--panel-2);border:1px solid var(--line);border-radius:10px;padding:14px 18px;margin-top:16px}
   .net-strip .n-l{font-size:var(--l-mid);letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
   .net-strip .n-v{font-family:var(--mono);font-size:var(--v-strip);font-weight:600}
@@ -413,9 +426,120 @@
     cursor:pointer;font-family:inherit;border:1px solid var(--line);background:var(--panel);color:var(--ink)}
   .hint-card .hc-nav .hc-next{margin-left:auto;background:var(--amber);border-color:var(--amber);
     color:var(--bg);font-weight:600}
+  /* ---------- assistant (local Ollama chat) ----------
+     z-index ladder, extended: topbar 40 · FAB 45 · menus 50 · panel 55 · toast 60 · hints 60-70 ·
+     overlays 100. The panel deliberately sits under the toast (a save-failure message must stay
+     readable) and under the hint tour / reset dialog. */
+  .chat-fab{position:fixed;right:20px;bottom:20px;z-index:45;width:52px;height:52px;border-radius:50%;
+    background:var(--amber);color:#1a1206;border:0;font-size:21px;cursor:pointer;
+    box-shadow:0 10px 26px rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center}
+  .chat-fab:hover{filter:brightness(1.08)}
+  .chat-fab:focus-visible{outline:2px solid var(--amber);outline-offset:3px}
+  .chat-fab[hidden]{display:none}
+
+  .chat-panel{position:fixed;right:20px;bottom:82px;z-index:55;width:min(380px,calc(100vw - 24px));
+    height:min(560px,calc(100vh - 112px));background:var(--panel);border:1px solid var(--line);
+    border-radius:12px;box-shadow:0 20px 50px rgba(0,0,0,.5);display:flex;flex-direction:column;
+    overflow:hidden;animation:cpRise .18s ease}
+  .chat-panel[hidden]{display:none}
+  @keyframes cpRise{0%{opacity:0;transform:translateY(8px)}100%{opacity:1;transform:none}}
+
+  .cp-top{display:flex;align-items:center;gap:4px;padding:12px 14px;border-bottom:1px solid var(--line);
+    background:var(--panel-2);flex:none}
+  .cp-top .cp-title{font-size:13.5px;font-weight:600;display:flex;align-items:center;gap:8px;color:var(--ink)}
+  /* a button, not a label: once connected this is the only way back to the model picker */
+  .cp-top .cp-badge{font-family:var(--mono);font-size:10.5px;color:var(--muted);font-weight:400;
+    background:none;border:0;padding:0;cursor:pointer}
+  .cp-top .cp-badge:hover{color:var(--amber)}
+  .cp-top .cp-badge:empty{display:none}
+  .cp-icon{margin-left:auto;background:none;border:0;color:var(--muted);cursor:pointer;font-size:15px;
+    padding:5px 7px;border-radius:6px;line-height:1}
+  .cp-icon:hover{color:var(--ink);background:var(--panel)}
+  .cp-icon+.cp-icon{margin-left:2px}
+
+  .cp-log{flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:10px}
+  .cp-msg{max-width:88%;padding:9px 12px;border-radius:10px;font-size:13.5px;line-height:1.5;
+    white-space:pre-wrap;word-break:break-word}
+  /* color-mix() precedent already in use at the hint-target outline above */
+  .cp-msg.user{align-self:flex-end;background:color-mix(in srgb,var(--amber) 16%,var(--panel-2));color:var(--ink)}
+  .cp-msg.assistant{align-self:flex-start;background:var(--panel-2);color:var(--ink);border:1px solid var(--line)}
+  .cp-msg .cp-cursor{display:inline-block;width:7px;height:13px;margin-left:2px;background:var(--amber);
+    vertical-align:-2px;animation:cpBlink 1s step-start infinite}
+  @keyframes cpBlink{50%{opacity:0}}
+  .cp-msg.error{border-color:var(--down);color:var(--down);background:color-mix(in srgb,var(--down) 10%,var(--panel-2))}
+
+  .cp-ack,.cp-step{background:var(--panel-2);border:1px solid var(--line);border-radius:10px;padding:14px;
+    font-size:13px;line-height:1.55;color:var(--muted)}
+  .cp-ack b,.cp-step b{color:var(--ink)}
+  .cp-ack button,.cp-primary{margin-top:10px;background:var(--amber);color:#1a1206;border:0;padding:8px 16px;
+    border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit}
+  .cp-ack button:hover,.cp-primary:hover{filter:brightness(1.08)}
+  .cp-primary[disabled]{opacity:.5;cursor:not-allowed;filter:none}
+  .cp-step h4{margin:0 0 8px;font-size:13.5px;color:var(--ink)}
+  .cp-step p{margin:0 0 8px}
+  .cp-step a{color:var(--amber)}
+  .cp-step pre{background:var(--tape-bg);color:var(--ink);padding:9px 10px;border-radius:8px;
+    overflow-x:auto;font-family:var(--mono);font-size:12px;margin:0 0 6px}
+  .cp-step code{background:var(--tape-bg);color:var(--ink);padding:2px 5px;border-radius:4px;
+    font-family:var(--mono);font-size:12px}
+
+  /* one row per installed model, straight from Ollama's /api/tags */
+  .cp-model{display:block;width:100%;text-align:left;margin-top:6px;background:var(--panel);
+    border:1px solid var(--line);color:var(--ink);padding:9px 11px;border-radius:8px;cursor:pointer;
+    font-family:var(--mono);font-size:12.5px}
+  .cp-model:hover{border-color:var(--amber-dim)}
+  .cp-model[aria-current="true"]{border-color:var(--amber);color:var(--amber)}
+
+  /* "Change address" — collapsed by default. The default endpoint is right for almost everyone,
+     and a URL box is the wrong first thing to put in front of someone who has never run Ollama. */
+  .cp-adv{margin-top:10px}
+  .cp-adv summary{cursor:pointer;color:var(--muted);font-size:12px;list-style:none}
+  .cp-adv summary::-webkit-details-marker{display:none}
+  .cp-adv summary:before{content:"▸ ";font-size:10px}
+  .cp-adv[open] summary:before{content:"▾ "}
+  .cp-adv input{width:100%;margin-top:8px;background:var(--panel);border:1px solid var(--line);
+    color:var(--ink);border-radius:7px;padding:8px 9px;font-family:var(--mono);font-size:12px}
+  .cp-adv input:focus{outline:none;border-color:var(--amber)}
+
+  /* --muted, never --faint: same Latte contrast reason as .cp-fine below. This carries the
+     connection diagnosis, so it has to stay readable on every theme. */
+  .cp-status{font-size:12px;color:var(--muted);line-height:1.5;margin:8px 0 0}
+  .cp-step .cp-status{margin:8px 0 0}
+  .cp-status.bad{color:var(--down)}
+
+  .cp-guide{font-size:13px;line-height:1.6;color:var(--muted)}
+  .cp-guide h4{margin:12px 0 6px;font-size:13px;color:var(--ink)}
+  .cp-guide h4:first-child{margin-top:0}
+  .cp-guide p{margin:0 0 8px}
+  .cp-guide code{background:var(--tape-bg);color:var(--ink);padding:2px 5px;border-radius:4px;
+    font-family:var(--mono);font-size:12px}
+  .cp-guide pre{background:var(--tape-bg);color:var(--ink);padding:9px 10px;border-radius:8px;
+    overflow-x:auto;font-family:var(--mono);font-size:12px;margin:0 0 6px}
+  .cp-copy{background:var(--panel-2);border:1px solid var(--line);color:var(--muted);cursor:pointer;
+    padding:4px 9px;border-radius:6px;font-size:11px;margin:0 0 10px;font-family:inherit;display:inline-block}
+  .cp-copy:hover{color:var(--ink);border-color:var(--amber-dim)}
+
+  .cp-in{display:flex;gap:8px;padding:10px 12px;border-top:1px solid var(--line);flex:none;align-items:flex-end}
+  .cp-in textarea{flex:1;resize:none;max-height:110px;background:var(--panel-2);border:1px solid var(--line);
+    color:var(--ink);border-radius:8px;padding:9px 10px;font-size:13.5px;font-family:inherit;line-height:1.4}
+  .cp-in textarea:focus{outline:none;border-color:var(--amber)}
+  .cp-in textarea[disabled]{opacity:.5;cursor:not-allowed}
+  .cp-send{flex:none;background:var(--amber);color:#1a1206;border:0;padding:9px 15px;border-radius:8px;
+    font-size:13px;font-weight:600;cursor:pointer;font-family:inherit}
+  .cp-send:hover{filter:brightness(1.08)}
+  .cp-send[disabled]{opacity:.4;cursor:not-allowed;filter:none}
+  .cp-send.stop{background:var(--down);color:#fff}
+
+  /* --muted, never --faint: this is the standing disclaimer, and it is the single most
+     important Latte call in this block — --faint fails contrast on Latte's --panel. */
+  .cp-fine{flex:none;padding:8px 14px 11px;font-size:10.5px;letter-spacing:.02em;color:var(--muted);
+    text-align:center;border-top:1px solid var(--line)}
+
   @media (prefers-reduced-motion:reduce){
     .intro-wipe.hold{animation:none;transform:scaleX(1)}
     .welcome{animation:none;opacity:1}
+    .chat-panel{animation:none}
+    .cp-msg .cp-cursor{animation:none}
   }
 </style>
 </head>
@@ -482,6 +606,12 @@
           <span class="sh-name">✎ Your name</span><span class="sh-cur" id="shCurName"></span><span class="sh-caret">›</span>
         </button>
         <div class="set-body" id="nameItems" hidden></div>
+      </div>
+      <div class="set-sec">
+        <button class="set-head" type="button" data-sec="chat" aria-expanded="false" aria-controls="chatSetItems">
+          <span class="sh-name">✦ Assistant</span><span class="sh-cur" id="shCurChat"></span><span class="sh-caret">›</span>
+        </button>
+        <div class="set-body" id="chatSetItems" hidden></div>
       </div>
       <!-- Not a .set-sec: openSetSection() treats every .set-head as an accordion panel, and a
            one-shot destructive action is not a picker. Plain button, set apart by a rule. -->
@@ -607,6 +737,25 @@
     </div>
 
     <div class="panel" style="margin-top:16px">
+      <h3><span id="hBudgetGoals">Goals</span> <span class="tag">funded by your ledger · monthly</span></h3>
+      <div class="read-row" id="goalReads"></div>
+      <table>
+        <thead><tr>
+          <th style="width:22%" id="thGoalName">Goal</th>
+          <th style="width:16%" id="thGoalFunded">Funded by</th>
+          <th class="num" style="width:12%" id="thGoalTarget">Target</th>
+          <th class="num" style="width:12%" id="thGoalMonthly">Per month</th>
+          <th style="width:13%" id="thGoalBy">Target date</th>
+          <th id="thGoalProgress">Progress</th>
+          <th style="width:34px"></th>
+        </tr></thead>
+        <tbody id="goalBody"></tbody>
+      </table>
+      <button class="add-row" data-add="goal" id="btnAddGoal">+ Add goal</button>
+      <div class="note">Progress is read straight from your ledger — pick the account category that funds each goal and it updates itself when you update the ledger. <b>Per month</b> is what you intend to put in; the readout above compares your total commitment against your net cash flow.</div>
+    </div>
+
+    <div class="panel" style="margin-top:16px">
       <h3><span id="hBudgetSpendVsLimit">Spend vs limit</span> <span class="tag">by category · monthly</span></h3>
       <div class="chart-box tall"><canvas id="spendChart" role="img" aria-label="Horizontal bar chart comparing current monthly spend against the set limit for each category"></canvas></div>
       <div class="note" id="spendNote"></div>
@@ -726,6 +875,11 @@
         <span class="cd">CPI-U series used to compute year-over-year inflation and, from it, the real yield.</span>
         <span class="cl">Public</span>
       </div>
+      <div class="credit-item">
+        <span class="cn"><a href="https://ollama.com" target="_blank" rel="noopener noreferrer">Ollama ↗</a></span>
+        <span class="cd">Runs the optional ✦ assistant's language model locally on your machine. Not bundled with this page — you install it separately, and nothing is sent to Ollama's servers.</span>
+        <span class="cl">MIT</span>
+      </div>
     </div>
 
     <div class="panel">
@@ -753,6 +907,23 @@
         above holds until you opt in.
         <br><br>
         Not financial advice.
+        <br><br>
+        <b>The ✦ assistant is optional and runs entirely on your own computer</b> via
+        <a href="https://ollama.com" target="_blank" rel="noopener noreferrer">Ollama</a>, a separate
+        free application you install yourself — nothing is bundled or downloaded by this page. There
+        is no API key, no account and no sign-up: setup happens in the assistant panel itself — open
+        ✦, press <b>Connect</b>, then pick from whichever models you have installed. Using
+        it means loosening the Content-Security-Policy to allow requests to
+        <code>127.0.0.1</code>/<code>localhost</code> on any port, so injected script could in theory
+        reach another local service on your machine; it still cannot reach anywhere off it. The
+        assistant is read-only — it can suggest nothing back into your figures — and it only ever
+        receives a computed summary: net worth, cash flow and savings rate, spending and asset
+        allocation by category, your goals' progress, and recent macro readings. Individual holding
+        and liability names, and any free-text notes you've written, are never included — only
+        category-level totals; the one exception is the names of your savings goals, which are sent
+        so the assistant can refer to them. Your conversation is saved in this browser, right alongside the
+        rest of your data, and is included in Export files. It is a small local language model: it
+        can be confidently wrong, and nothing it says is financial, tax or legal advice.
       </div>
     </div>
   </section>
@@ -760,6 +931,25 @@
 
 <div class="foot" id="foot"></div>
 <div class="watermark">SomiFinance — Demo ©2026 mDemarco12</div>
+
+<!-- ✦ assistant — local Ollama chat, read-only. No aria-modal / focus trap: the panel is
+     non-modal and the page stays usable behind it. aria-live is on the LOG, not per message,
+     so a streamed token doesn't re-announce the whole transcript. -->
+<button type="button" class="chat-fab" id="chatFab" aria-haspopup="dialog" aria-expanded="false" aria-controls="chatPanel" title="Assistant">✦</button>
+<div class="chat-panel" id="chatPanel" role="dialog" aria-label="Assistant" hidden>
+  <div class="cp-top">
+    <span class="cp-title">✦ Assistant<button type="button" class="cp-badge" id="cpModelBadge" title="Change model"></button></span>
+    <button type="button" class="cp-icon" id="chatClear" title="Clear conversation" aria-label="Clear conversation">⌫</button>
+    <button type="button" class="cp-icon" id="chatClose" title="Close" aria-label="Close assistant">✕</button>
+  </div>
+  <div class="cp-log" id="chatLog" aria-live="polite"></div>
+  <div class="cp-in">
+    <textarea id="chatInput" placeholder="Ask about your figures…" rows="1" maxlength="2000" aria-label="Message" disabled></textarea>
+    <button type="button" class="cp-send" id="chatSend" disabled>Send</button>
+  </div>
+  <div class="cp-fine">AI-generated · runs on your machine · read-only · not financial advice</div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script>
@@ -954,6 +1144,8 @@ function seed(){
       {id:uid(),date:"2026-09-24",event:"Vesting date",imp:"Personal",notes:"example personal date"},
       {id:uid(),date:"2026-10-15",event:"Quarterly rebalance",imp:"Personal",notes:"example personal date"}
     ],
+    goals:demoGoals(),
+    chat:{ack:false,endpoint:"http://127.0.0.1:11434",model:"",messages:[]},
     budget:seedBudget()
   };
 }
@@ -980,6 +1172,16 @@ function demoLiabilities(){
       {id:uid(),name:"Credit card",cat:"Credit card",value:1850,notes:"paid in full monthly"}
   ];
 }
+// Savings goals. fundedBy names an asset CATEGORY from demoAssets() above (or "" for
+// "everything accessible"), so the demo's progress bars are read from the demo ledger and
+// move when it does.
+function demoGoals(){
+  return [
+      {id:uid(),name:"Emergency fund — 6 months",target:36000,targetDate:"",fundedBy:"Cash",monthly:400},
+      {id:uid(),name:"House deposit",target:80000,targetDate:"2029-06-01",fundedBy:"Brokerage",monthly:900},
+      {id:uid(),name:"Replace the car",target:25000,targetDate:"2028-01-01",fundedBy:"",monthly:250}
+  ];
+}
 /* @variant:end seed */
 // tolerate older saves / partial imports that predate or half-populate the budget block
 function normalizeBudget(){
@@ -995,6 +1197,18 @@ function normalizeBudget(){
   b.income.forEach(r=>{if(!r.id)r.id=uid();});
   b.expenses.forEach(r=>{if(!r.id)r.id=uid();if(r.kind!=="essential"&&r.kind!=="discretionary")r.kind="discretionary";});
   state.budget=b;
+}
+// The same job normalizeBudget() does, for the blocks added after it. sanitizeState() already
+// guarantees state.goals is an array and seed() supplies one in every build, so this is
+// belt-and-braces — but the failure it prevents is renderBudget() throwing on load with no
+// in-app way back, which is exactly why normalizeBudget() exists. Call it beside that one.
+function normalizeAddons(){
+  if(!Array.isArray(state.goals))state.goals=[];
+  if(!state.chat||typeof state.chat!=="object")state.chat={};
+  if(state.chat.ack!==true)state.chat.ack=false;
+  if(!CHAT_LOOPBACK.test(state.chat.endpoint||""))state.chat.endpoint=CHAT_ENDPOINT_DEFAULT;
+  if(typeof state.chat.model!=="string")state.chat.model="";
+  if(!Array.isArray(state.chat.messages))state.chat.messages=[];
 }
 /* @variant:begin seedBudget */
 // The demo build fills every amount so the Budgeting tab, its totals and the future-spend
@@ -1078,13 +1292,28 @@ let state, canPersist=true;
    ("personal"/"live"), not ids, and budget order is array order, so no id crosses a save.
 
    Every new state field needs a line here — see PROJECT_STATUS.md "Key facts". */
-const MAX_STR=200, MAX_ROWS=1000;
+const MAX_STR=200, MAX_ROWS=1000, MAX_GOALS=50;
+const MAX_CHAT_MSGS=40, MAX_CHAT_CHARS=2000;
 const sStr=(v,max=MAX_STR)=>typeof v==="string"?v.slice(0,max):"";
 const sNum=(v,dflt=0)=>{const n=typeof v==="number"?v:parseFloat(v);return Number.isFinite(n)?n:dflt;};
 const sNumN=v=>{const n=typeof v==="number"?v:parseFloat(v);return Number.isFinite(n)?n:null;};
 const sArr=v=>Array.isArray(v)?v.slice(0,MAX_ROWS):[];
 const sPick=(v,allowed,dflt)=>allowed.includes(v)?v:dflt;
 const sDate=v=>/^\d{4}-\d{2}-\d{2}$/.test(v)?v:today();
+// Optional date: falls back to "" rather than today(). A goal with no deadline is a normal
+// goal, and sDate() would silently invent one that then renders as "due today".
+const sDateN=v=>/^\d{4}-\d{2}-\d{2}$/.test(v)?v:"";
+
+/* ---------- assistant (local Ollama, read-only) ----------
+   Never introduce a bare GOAL/GOALS identifier here (see the state.goals comment above) — this
+   block is unrelated to savings goals and shares no naming with it. */
+const CHAT_ENDPOINT_DEFAULT="http://127.0.0.1:11434";
+// 127.0.0.1 rather than localhost by default: on a dual-stack machine `localhost` can resolve to
+// ::1, where Ollama is not listening, and that failure looks identical to "not running".
+// This regex is the SECOND lock on the endpoint — connect-src is the first. Both exist because the
+// endpoint is user-editable AND import-editable: without this, a crafted backup could point it at
+// a remote host, and the only thing stopping the POST would be a policy the user can't see.
+const CHAT_LOOPBACK=/^https?:\/\/(127\.0\.0\.1|localhost|\[::1\])(:\d{1,5})?$/;
 
 function sanitizeState(d){
   const s=seed();
@@ -1134,6 +1363,32 @@ function sanitizeState(d){
   s.calendar=sArr(o.calendar).map(e=>({id:uid(),date:sDate(e&&e.date),event:sStr(e&&e.event),
     imp:sPick(e&&e.imp,["High","Med","Low","Personal"],"Med"),notes:sStr(e&&e.notes)}));
 
+  // Savings goals. Money is USD like every other figure. fundedBy names an asset CATEGORY (or ""
+  // for "everything accessible") and stays a FREE STRING for the same reason holding.cat does —
+  // an imported or other-goal category must survive, and catOptions() surfaces it at the top of
+  // the dropdown so a stray click can't overwrite it. NOT to be confused with profile.goal /
+  // GOALS, which is what the user is TRACKING (personal/startup/business/other).
+  const goalRow=g=>({id:uid(),name:sStr(g&&g.name,60),
+    target:Math.max(0,sNum(g&&g.target)),targetDate:sDateN(g&&g.targetDate),
+    fundedBy:sStr(g&&g.fundedBy,60),monthly:Math.max(0,sNum(g&&g.monthly))});
+  s.goals=sArr(o.goals).slice(0,MAX_GOALS).map(goalRow);
+
+  // Assistant. Read-only: nothing here can write to state. The transcript is stored only so the
+  // panel survives a reload — capped hard, because it is the densest personal disclosure in the
+  // app and it rides along in every Export.
+  const ch=(o.chat&&typeof o.chat==="object")?o.chat:{};
+  const ep=sStr(ch.endpoint,120).replace(/\/+$/,"");
+  s.chat={
+    ack:ch.ack===true,
+    endpoint:CHAT_LOOPBACK.test(ep)?ep:CHAT_ENDPOINT_DEFAULT,
+    model:sStr(ch.model,80),
+    messages:sArr(ch.messages).slice(-MAX_CHAT_MSGS).map(m=>({
+      role:(m&&m.role==="assistant")?"assistant":"user",
+      text:sStr(m&&m.text,MAX_CHAT_CHARS),
+      ts:sStr(m&&m.ts,25)
+    })).filter(m=>m.text)
+  };
+
   // Missing arrays fall through to seedBudget() via normalizeBudget(), which the callers run next.
   if(o.budget&&typeof o.budget==="object"){
     const bIn=r=>({id:uid(),name:sStr(r&&r.name),cat:sStr(r&&r.cat,60),amount:sNum(r&&r.amount),
@@ -1166,7 +1421,7 @@ function load(){
     // sanitizeState() supplies every default that the old inline guards did, including the
     // onboarded:false backfill that makes the welcome screen show once for existing saves.
     state=sanitizeState(raw?JSON.parse(raw):null);
-    normalizeBudget();
+    normalizeBudget();normalizeAddons();
   }catch(e){state=seed();canPersist=false;}
 }
 function save(){
@@ -1194,6 +1449,54 @@ const totalCashIn=()=>sumAmt(state.budget.income);
 const totalCashOut=()=>sumAmt(state.budget.expenses);
 const netCashFlow=()=>totalCashIn()-totalCashOut();
 const discretionaryMonthly=()=>sumAmt(state.budget.expenses.filter(e=>e.kind==="discretionary"));
+
+// The three roll-ups below were inline in the renderers that needed them. They are shared now
+// because the assistant's context builder needs the same numbers, and two copies of a
+// divide-by-zero guard is one too many — a summary that disagreed with the panel it describes
+// would be worse than no summary.
+// Savings rate. null (not 0) when there is no income, so callers render "—" rather than "0%".
+const savingsRate=()=>{const i=totalCashIn();return i>0?netCashFlow()/i*100:null;};
+// Asset allocation: [cat,value] rows, biggest first, zeroes dropped. Groups by whatever string
+// is in a.cat — see renderOverview()'s note about categories outside the active goal's set.
+const allocByCat=()=>{
+  const by={};
+  state.assets.forEach(a=>{by[a.cat]=(by[a.cat]||0)+(+a.value||0);});
+  return Object.entries(by).filter(([,v])=>v>0).sort((a,b)=>b[1]-a[1]);
+};
+// Budget spend vs limit: [cat,{spent,limit}] rows, biggest spend first.
+const spendByCat=()=>{
+  const by={};
+  state.budget.expenses.forEach(e=>{
+    const c=e.cat||"Other";
+    if(!by[c])by[c]={spent:0,limit:0};
+    by[c].spent+=(+e.amount||0);
+    by[c].limit+=(+e.limit||0);
+  });
+  return Object.entries(by).filter(([,v])=>v.spent>0||v.limit>0).sort((a,b)=>b[1].spent-a[1].spent);
+};
+
+/* ---------- savings goals ----------
+   Progress is DERIVED from the ledger, not a second number the user maintains: fundedBy names
+   an asset category and the goal reads that category's current balance ("" reads everything
+   accessible). Two goals funded by the same category deliberately show the same pot — the panel
+   says so rather than faking a split. Not to be confused with profile.goal / GOALS (the
+   personal/startup/business/other TRACKING type) — see the sanitizeState() comment on s.goals. */
+const goalSaved=g=>(g&&g.fundedBy)?sumAssets(a=>a.cat===g.fundedBy):accessibleAssets();
+const goalGap=g=>Math.max(0,(+g.target||0)-goalSaved(g));
+const goalPct=g=>{const t=+g.target||0;return t>0?Math.min(100,goalSaved(g)/t*100):0;};
+const goalCommitted=()=>state.goals.reduce((s,g)=>s+(+g.monthly||0),0);
+// Whole months to close the gap at the stated monthly contribution. 0 = already there,
+// null = no contribution set and still short, so "never at this rate" rather than a false ETA.
+const goalMonths=g=>{const gap=goalGap(g),m=+g.monthly||0;return gap<=0?0:(m>0?Math.ceil(gap/m):null);};
+// Whole months from today to targetDate; null when no date is set.
+const monthsUntil=d=>{
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(d))return null;
+  const n=new Date(),tgt=new Date(d+"T00:00:00");
+  return (tgt.getFullYear()-n.getFullYear())*12+(tgt.getMonth()-n.getMonth());
+};
+// What the goal actually needs per month to land on its date, ignoring growth. null when
+// there's no date or the date has already passed.
+const goalNeeded=g=>{const m=monthsUntil(g.targetDate);return (m==null||m<=0)?null:goalGap(g)/m;};
 
 /* ---------- toast ---------- */
 let toastT;
@@ -1228,6 +1531,9 @@ const LANGS={
     "budget.cashInOut":"Cash in / cash out","budget.netMonthlyCashFlow":"Net monthly cash flow",
     "budget.spendVsLimit":"Spend vs limit","budget.futureSpend":"Future spend",
     "budget.returnPct":"Return %","budget.years":"Years","budget.addRow":"Add Row",
+    "goals.title":"Goals","goals.name":"Goal","goals.funded":"Funded by",
+    "goals.target":"Target","goals.perMonth":"Per month","goals.date":"Target date",
+    "goals.progress":"Progress","goals.add":"Add goal",
     "macro.longBond":"Long-bond rate — your real-rate gauge","macro.realYield":"Real yield","macro.inflation":"Inflation",
     "calendar.personal":"Personal economic calendar","calendar.live":"Live economic calendar","calendar.addEvent":"Add event",
     "btn.export":"Export","btn.import":"Import","btn.refresh":"Refresh","btn.addReading":"Add reading",
@@ -1250,6 +1556,9 @@ const LANGS={
     "budget.cashInOut":"現金流入／流出","budget.netMonthlyCashFlow":"每月淨現金流",
     "budget.spendVsLimit":"支出與上限比較","budget.futureSpend":"未來支出",
     "budget.returnPct":"報酬率 %","budget.years":"年數","budget.addRow":"新增列",
+    "goals.title":"目標","goals.name":"目標","goals.funded":"資金來源",
+    "goals.target":"目標金額","goals.perMonth":"每月投入","goals.date":"目標日期",
+    "goals.progress":"進度","goals.add":"新增目標",
     "macro.longBond":"長期公債殖利率——你的實質利率指標","macro.realYield":"實質殖利率","macro.inflation":"通貨膨脹",
     "calendar.personal":"個人經濟日曆","calendar.live":"即時經濟日曆","calendar.addEvent":"新增事件",
     "btn.export":"匯出","btn.import":"匯入","btn.refresh":"重新整理","btn.addReading":"新增數據",
@@ -1272,6 +1581,9 @@ const LANGS={
     "budget.cashInOut":"现金流入／流出","budget.netMonthlyCashFlow":"每月净现金流",
     "budget.spendVsLimit":"支出与限额对比","budget.futureSpend":"未来支出",
     "budget.returnPct":"收益率 %","budget.years":"年数","budget.addRow":"新增行",
+    "goals.title":"目标","goals.name":"目标","goals.funded":"资金来源",
+    "goals.target":"目标金额","goals.perMonth":"每月投入","goals.date":"目标日期",
+    "goals.progress":"进度","goals.add":"新增目标",
     "macro.longBond":"长期国债收益率——你的实际利率指标","macro.realYield":"实际收益率","macro.inflation":"通货膨胀",
     "calendar.personal":"个人经济日历","calendar.live":"实时经济日历","calendar.addEvent":"新增事件",
     "btn.export":"导出","btn.import":"导入","btn.refresh":"刷新","btn.addReading":"新增数据",
@@ -1300,6 +1612,9 @@ const CHROME_MAP={
   thBudgetNotes:"col.notes",lblSecCashIn:"budget.cashIn",lblSecCashOut:"budget.cashOut",
   lblNetMonthlyCashFlow:"budget.netMonthlyCashFlow",hBudgetSpendVsLimit:"budget.spendVsLimit",
   hBudgetFutureSpend:"budget.futureSpend",lblReturnPct:"budget.returnPct",lblYears:"budget.years",
+  hBudgetGoals:"goals.title",thGoalName:"goals.name",thGoalFunded:"goals.funded",
+  thGoalTarget:"goals.target",thGoalMonthly:"goals.perMonth",thGoalBy:"goals.date",
+  thGoalProgress:"goals.progress",
   hMacroLongBond:"macro.longBond",hMacroRealYield:"macro.realYield",hMacroInflation:"macro.inflation",
   yAdd:"btn.addReading",iAdd:"btn.addReading",
   hCalPersonal:"calendar.personal",thCalDate:"col.date",thCalEvent:"col.event",
@@ -1317,6 +1632,7 @@ function applyChromeI18n(){
   document.getElementById("btnAddAsset").textContent="+ "+t("ledger.addAsset");
   document.getElementById("btnAddLiability").textContent="+ "+t("ledger.addLiability");
   document.getElementById("btnAddEvent").textContent="+ "+t("calendar.addEvent");
+  document.getElementById("btnAddGoal").textContent="+ "+t("goals.add");
 }
 
 /* ---------- themes ---------- */
@@ -1405,10 +1721,8 @@ function renderOverview(){
   }else{dEl.textContent="";sEl.textContent="no snapshots yet — hit Refresh";}
 
   // allocation
-  const byCat={};
-  state.assets.forEach(a=>{byCat[a.cat]=(byCat[a.cat]||0)+(+a.value||0);});
   const ta=totalAssets()||1;
-  const rows=Object.entries(byCat).filter(([,v])=>v>0).sort((a,b)=>b[1]-a[1]);
+  const rows=allocByCat();
   document.getElementById("allocList").innerHTML=rows.length?rows.map(([c,v])=>{
     const col=colorForCat(c),pct=(v/ta*100);
     return `<div class="alloc-item"><span class="swatch" style="background:${col}"></span>
@@ -1544,6 +1858,7 @@ function renderBudget(){
   });
   updateBudgetTotals();
   wireBudgetRows();
+  renderGoals();
   renderSpendChart();
   renderFutureChart();
 }
@@ -1559,9 +1874,75 @@ function updateBudgetTotals(){
   const bNet=document.getElementById("bNet");
   bNet.textContent=fmt(net);
   bNet.className="v tnum "+(net>=0?"up":"down");
-  document.getElementById("bRate").textContent=inTot>0?(net/inTot*100).toFixed(1)+"%":"—";
+  const sRate=savingsRate();
+  document.getElementById("bRate").textContent=sRate==null?"—":sRate.toFixed(1)+"%";
   document.getElementById("bDisc").textContent=outTot>0?fmt(disc)+" · "+(disc/outTot*100).toFixed(0)+"%":fmt(disc);
 }
+
+/* ---------- render: goals ----------
+   Lives on the Budgeting tab rather than a tab of its own — see PROJECT_STATUS.md on the cost
+   of adding a tab (menu button, section, REFRESH_TITLE/renderTab, the 1-6 keydown array, three
+   LANGS dicts and CHROME_MAP, all in lockstep). This sits one panel above Future spend, which
+   already answers "what if this were invested instead". */
+// "" (All accessible) gets an explicit empty value rather than relying on catOptions()'s
+// text-is-value shortcut, since an empty <option> has no visible label. An unlisted category
+// (import, or a goal set from a different tracking type) is still preserved and shown first,
+// same rule as catOptions().
+function goalFundOptions(cur){
+  const cats=catsFor().assets;
+  const list=(cur===""||cats.includes(cur))?cats:[cur,...cats];
+  return `<option value="" ${cur===""?"selected":""}>All accessible</option>`+
+    list.map(c=>`<option value="${esc(c)}" ${c===cur?"selected":""}>${esc(c)}</option>`).join("");
+}
+function goalRowHTML(g){
+  const saved=goalSaved(g),pct=goalPct(g),target=+g.target||0,months=goalMonths(g),needed=goalNeeded(g);
+  let eta;
+  if(target<=0)eta="";
+  else if(saved>=target)eta=" · reached";
+  else if(g.targetDate&&needed!=null)eta=" · needs "+fmt(needed)+"/mo to land on time";
+  else if(months!=null)eta=" · ≈"+months+" mo at current rate";
+  else eta=" · no monthly amount set";
+  return `<tr data-id="${esc(g.id)}">
+    <td>${cellInput(g.name,"","",'data-gf="name"')}</td>
+    <td><select class="cell" data-gf="fundedBy">${goalFundOptions(g.fundedBy)}</select></td>
+    <td>${cellInput(toDisplay(target),"num","",'data-gf="target" inputmode="decimal"')}</td>
+    <td>${cellInput(toDisplay(g.monthly),"num","",'data-gf="monthly" inputmode="decimal"')}</td>
+    <td><input class="cell" type="date" value="${esc(g.targetDate)}" data-gf="targetDate"></td>
+    <td><span class="g-bar"><i style="width:${pct.toFixed(1)}%;background:${colorForCat(g.fundedBy)}"></i></span>
+      <span class="g-sub">${fmt(saved)} / ${fmt(target)} · ${pct.toFixed(0)}%${eta}</span></td>
+    <td><button class="del" title="Delete row">✕</button></td></tr>`;
+}
+function renderGoals(){
+  const body=document.getElementById("goalBody");
+  body.innerHTML=state.goals.length?state.goals.map(goalRowHTML).join(""):
+    `<tr><td colspan="7"><div class="empty">No goals yet. Add one and pick the account category that funds it.</div></td></tr>`;
+  const committed=goalCommitted(),net=netCashFlow(),over=committed>net;
+  document.getElementById("goalReads").innerHTML=state.goals.length?
+    `<div class="read"><span class="rl">Committed</span><span class="rv tnum" style="color:${over?css("--down"):css("--ink")}">${fmt(committed)}</span>
+      <span class="rd">per month across ${state.goals.length} goal${state.goals.length===1?"":"s"}</span></div>
+    <div class="read"><span class="rl">Net cash flow</span><span class="rv tnum">${fmt(net)}</span>
+      <span class="rd">${over?"short by "+fmt(committed-net)+"/mo":"headroom "+fmt(net-committed)+"/mo"}</span></div>`:"";
+  wireGoalRows();
+}
+function wireGoalRows(){
+  document.querySelectorAll("#goalBody tr[data-id]").forEach(tr=>{
+    const id=tr.dataset.id,g=state.goals.find(x=>x.id===id);
+    if(!g)return;
+    tr.querySelectorAll("[data-gf]").forEach(el=>{
+      const f=el.dataset.gf,numeric=f==="target"||f==="monthly";
+      el.addEventListener("change",()=>{
+        g[f]=numeric?fromDisplay(el.value):el.value;
+        save();renderGoals();
+      });
+      if(numeric)el.addEventListener("blur",()=>{if(el.value!=="")el.value=toDisplay(g[f]);});
+    });
+    tr.querySelector(".del").addEventListener("click",()=>{
+      const i=state.goals.findIndex(x=>x.id===id);state.goals.splice(i,1);
+      save();renderGoals();toast("Goal deleted");
+    });
+  });
+}
+
 function wireBudgetRows(){
   document.querySelectorAll("#cashInBody tr, #cashOutBody tr").forEach(tr=>{
     const id=tr.dataset.id,section=tr.dataset.section;
@@ -1660,14 +2041,7 @@ function moveBudgetRow(section,dragId,targetId,below){
 }
 function renderSpendChart(){
   const pal=P();
-  const byCat={};
-  state.budget.expenses.forEach(e=>{
-    const c=e.cat||"Other";
-    if(!byCat[c])byCat[c]={spent:0,limit:0};
-    byCat[c].spent+=(+e.amount||0);
-    byCat[c].limit+=(+e.limit||0);
-  });
-  const rows=Object.entries(byCat).filter(([,v])=>v.spent>0||v.limit>0).sort((a,b)=>b[1].spent-a[1].spent);
+  const rows=spendByCat();
   const note=document.getElementById("spendNote");
   if(!rows.length){
     if(charts["spendChart"]){charts["spendChart"].destroy();delete charts["spendChart"];}
@@ -2178,6 +2552,10 @@ function setSectionCurrent(){
   document.getElementById("shCurGoal").textContent=g.label;
   const nm=((state.profile&&state.profile.name)||"").trim();
   document.getElementById("shCurName").textContent=nm||"Not set";
+  document.getElementById("shCurChat").textContent=
+    chatConn.busy?"Checking…":
+    (chatConn.checked&&!chatConn.ok)?"Not connected":
+    ((state.chat&&state.chat.model)||"Not set");
 }
 // sec=null collapses everything; otherwise exactly one section is open
 function openSetSection(sec){
@@ -2346,7 +2724,7 @@ function importJSON(file){
       const d=JSON.parse(r.result);
       if(!d||typeof d!=="object"||!Array.isArray(d.assets))throw 0;
       state=sanitizeState(d);
-      normalizeBudget();
+      normalizeBudget();normalizeAddons();
       boot(true);
       save();
       toast("Imported "+(file.name||"backup"));
@@ -2520,8 +2898,9 @@ function showResetConfirm(){
     <h1>Reset all data?</h1>
     <div class="wc-sub">This clears everything and returns SomiFinance to a fresh install.</div>
     <div class="wc-warn">
-      Deletes every <b>asset, liability, budget row, snapshot and calendar entry</b>, along with your
-      name, what you're tracking, and your theme, language and currency settings.<br><br>
+      Deletes every <b>asset, liability, budget row, savings goal, snapshot and calendar entry</b>,
+      along with your name, what you're tracking, your assistant conversation, and your theme,
+      language and currency settings.<br><br>
       Your data lives only in this browser — there is no server copy, so
       <b>this cannot be undone</b>. Export a backup first if there is any chance you'll want it.
     </div>
@@ -2696,6 +3075,772 @@ function startHints(){
   showHint(0);
 }
 
+/* ---------- assistant (local Ollama, read-only) ----------
+   Native /api/chat, not the OpenAI-compatible /v1 path: NDJSON is far simpler than SSE to hand-
+   parse, the final NDJSON object carries eval_count/prompt_eval_count telemetry Build 3's tuning
+   wants, one base URL covers /api/tags + /api/chat so the single endpoint setting is genuinely
+   single, and options:{num_ctx,...}/keep_alive/think are first-class. If a second backend is ever
+   wanted, /v1/chat/completions is the migration path and only the stream parser changes.
+
+   Everything here is READ-ONLY: nothing in this block writes to any state field except
+   state.chat itself. */
+let chatAbortCtl=null;
+
+// PRIVACY: individual holding/liability NAMES and any free-text `notes` fields must NEVER be
+// included below — only category-level rollups (allocByCat()/spendByCat()) and category names
+// go into this payload. The one deliberate exception is goal NAMES (user-authored labels, capped
+// at 40 chars each here): the assistant needs them to refer to a goal by name to be useful. This
+// keeps the payload small AND keeps free-text notes — the most plausible prompt-injection vector
+// into a summary of the user's own data — out of the model's context entirely.
+//
+// Rebuilt fresh on every call (never cached): this is called once per chat turn, immediately
+// before sending, so an edit made mid-conversation is reflected in the very next answer.
+function chatContext(){
+  const lines=[];
+
+  lines.push("Today: "+today()+".");
+
+  lines.push("Currency: figures below are shown in "+state.currency+" ("+curInfo().symbol+
+    "); SomiFinance stores every amount in USD internally and converts only for display, so a "+
+    "currency switch changes the numbers you see here, not the underlying ledger.");
+
+  const trackType=GOALS[state.profile&&state.profile.goal]||GOALS.personal;
+  lines.push("Tracking type: "+trackType.label+".");
+
+  lines.push("Net worth: "+fmt(netWorth())+" (assets "+fmt(totalAssets())+
+    ", liabilities "+fmt(totalLiab())+").");
+
+  lines.push("Liquidity: invested "+fmt(invested())+", cash "+fmt(cash())+
+    ", accessible this week "+fmt(accessibleAssets())+".");
+
+  const alloc=allocByCat();
+  if(!alloc.length){
+    lines.push("Allocation: no assets on the ledger yet.");
+  }else{
+    const totalA=totalAssets()||1;
+    const top=alloc.slice(0,6).map(([c,v])=>c+" "+fmt(v)+" ("+Math.round(v/totalA*100)+"%)");
+    const rest=alloc.slice(6);
+    let s="Allocation: "+top.join(", ");
+    if(rest.length){
+      const restSum=rest.reduce((a,[,v])=>a+v,0);
+      s+="; other "+rest.length+" categories, "+fmt(restSum);
+    }
+    lines.push(s+".");
+  }
+
+  const sr=savingsRate();
+  lines.push("Monthly: cash in "+fmt(totalCashIn())+", cash out "+fmt(totalCashOut())+
+    ", net "+fmt(netCashFlow())+", savings rate "+(sr==null?"n/a":Math.round(sr)+"%")+
+    ", discretionary "+fmt(discretionaryMonthly())+".");
+
+  const spend=spendByCat();
+  if(!spend.length){
+    lines.push("Spend by category: no expenses logged yet.");
+  }else{
+    const parts=spend.slice(0,8).map(([c,v])=>{
+      let seg=c+" "+fmt(v.spent);
+      if(v.limit>0)seg+=" [limit "+fmt(v.limit)+"]"+(v.spent>v.limit?"!":"");
+      return seg;
+    });
+    lines.push("Spend by category: "+parts.join(", ")+".");
+  }
+
+  const h=state.history;
+  if(h.length>1){
+    const n=Math.min(6,h.length);
+    const idx=new Set();
+    for(let i=0;i<n;i++)idx.add(Math.round(i*(h.length-1)/(n-1)));
+    const pts=[...idx].sort((a,b)=>a-b).map(i=>h[i]);
+    const trend=pts.map(p=>p.date+" "+fmt(p.net)).join(" → ");
+    const change=h[h.length-1].net-h[0].net;
+    const signedChange=(change>=0?"+":"")+fmt(change);
+    lines.push("Net worth trend: "+trend+" (change since first snapshot: "+signedChange+").");
+  }else{
+    lines.push("Net worth trend: not enough history yet — fewer than 2 snapshots recorded.");
+  }
+
+  const goals=state.goals.slice(0,8);
+  if(!goals.length){
+    lines.push("Goals: none set yet.");
+  }else{
+    const fundLabel=fb=>fb?fb:"all accessible assets";
+    const groups={};
+    goals.forEach(g=>{const k=g.fundedBy||"";(groups[k]=groups[k]||[]).push(g);});
+    const gname=g=>(g.name||"(untitled goal)").slice(0,40);
+    const goalLines=goals.map(g=>{
+      const saved=goalSaved(g), pct=Math.round(goalPct(g));
+      let s="\""+gname(g)+"\": target "+fmt(g.target)+", saved "+fmt(saved)+" ("+pct+"%), "+
+        "funded by "+fundLabel(g.fundedBy)+", contributing "+fmt(g.monthly)+"/mo";
+      if(g.targetDate){
+        const needed=goalNeeded(g);
+        let eta;
+        if(needed!=null){
+          eta="needs "+fmt(needed)+"/mo to land on time";
+        }else{
+          const months=goalMonths(g);
+          eta=(months==null)?"never at current rate":("≈"+months+" months at current rate");
+        }
+        s+=", target date "+g.targetDate+" — "+eta;
+      }
+      return s+".";
+    });
+    const shared=Object.entries(groups).filter(([,arr])=>arr.length>1)
+      .map(([k,arr])=>arr.map(gname).map(n=>"\""+n+"\"").join(" and ")+
+        " share the same funding source ("+fundLabel(k)+") — their progress reads the same pot.");
+    lines.push("Goals:\n- "+goalLines.join("\n- ")+(shared.length?"\nNote: "+shared.join(" "):""));
+  }
+
+  if(state.yields.length||state.inflation.length){
+    const y=[...state.yields].sort((a,b)=>a.date<b.date?-1:1).pop()||{};
+    const inf=[...state.inflation].sort((a,b)=>a.date<b.date?-1:1).pop()||{};
+    const y10=(y.y10!=null)?y.y10+"%":"n/a";
+    const y30=(y.y30!=null)?y.y30+"%":"n/a";
+    const cpi=(inf.cpi!=null)?inf.cpi+"%":"n/a";
+    lines.push("Macro: 10y yield "+y10+", 30y yield "+y30+", CPI YoY "+cpi+".");
+  }
+
+  let out=lines.join("\n");
+  const CAP=3500, MARK="…(truncated)";
+  if(out.length>CAP)out=out.slice(0,CAP-MARK.length)+MARK;
+  return out;
+}
+const CHAT_SYS=[
+  "You are a read-only financial assistant built into SomiFinance. You have no tools and cannot "+
+  "change anything in the app. If the user wants to add, edit, or remove data, tell them which "+
+  "tab does that instead: Overview, Assets & Liabilities, Budgeting, Macro Signals, or Economic "+
+  "Calendar.",
+
+  "The context block that follows this message in the conversation is the ONLY financial data "+
+  "you have. It contains category-level totals and rollups, not individual holding or liability "+
+  "names, and no free-text notes. Never guess, infer, or invent a figure that is not present in "+
+  "that context — if the user asks about something the context doesn't cover (a specific "+
+  "holding, a note, anything not listed), say plainly that you don't have that detail rather "+
+  "than estimating one.",
+
+  "You may do arithmetic on the figures you are given — sums, differences, percentages of the "+
+  "numbers in the context — but never extrapolate, project, or round your way into a new figure "+
+  "that isn't directly derivable from what's given, and never present a number you computed as "+
+  "if it were a figure the app itself reported.",
+
+  "Do not name or recommend specific securities, tickers, funds, or financial products. Do not "+
+  "make market-timing calls (predictions about when to buy, sell, or hold). Do not give tax or "+
+  "legal advice.",
+
+  "Answer in plain prose. Do not use markdown headings, tables, or bullet lists unless the user "+
+  "explicitly asks for a list. Keep answers under about 180 words unless the user asks for more "+
+  "detail.",
+
+  "Do not add your own disclaimer or caveat (e.g. \"this isn't financial advice\") to your "+
+  "replies — the app already shows a permanent disclaimer under every one of your messages, so "+
+  "repeating one wastes your word budget."
+].join("\n\n");
+// Assembles the outgoing messages array: system message (CHAT_SYS + "\n" + chatContext()) followed
+// by the capped transcript. Called once per send. Do not cache the system message across sends —
+// chatContext() must reflect an edit made mid-conversation on the very next turn.
+//
+// Transcript budget: at most 8 messages and 6000 chars, walked newest-first so a conversation that
+// no longer fits drops its OLDEST turns first, never truncates a message in the middle, and always
+// keeps at least the most recent message even if that one message alone is large. This is tighter
+// than the storage-time cap (state.chat.messages holds up to MAX_CHAT_MSGS=40 messages of up to
+// MAX_CHAT_CHARS=2000 chars each, worst case ~80KB) because what goes ON THE WIRE has to fit
+// alongside chatContext() inside num_ctx=8192 tokens — Ollama truncates overflow from the LEFT,
+// which would silently drop the system prompt first.
+function chatWire(){
+  const sysMsg={role:"system",content:CHAT_SYS+"\n"+chatContext()};
+
+  const all=Array.isArray(state.chat.messages)?state.chat.messages:[];
+  const MSG_BUDGET=8, CHAR_BUDGET=6000;
+  const picked=[];
+  let chars=0;
+  for(let i=all.length-1;i>=0&&picked.length<MSG_BUDGET;i--){
+    const m=all[i];
+    const text=(m&&typeof m.text==="string")?m.text:"";
+    // Only refuse to add a message once we already hold at least one — this guarantees the
+    // newest turn (the user's current question) always makes it in, even if it alone exceeds
+    // the char budget, rather than shipping an empty transcript.
+    if(picked.length>0&&chars+text.length>CHAR_BUDGET)break;
+    chars+=text.length;
+    picked.push({role:m&&m.role==="assistant"?"assistant":"user",content:text});
+  }
+  picked.reverse();
+
+  return [sysMsg,...picked];
+}
+
+function chatBody(messages,model){
+  const b={model,stream:true,keep_alive:"5m",
+    options:{temperature:0.4,num_predict:400,num_ctx:8192},messages};
+  // Qwen3 / DeepSeek-R1 / gpt-oss emit a reasoning block that would stream into the bubble as
+  // visible <think> noise. Only sent for models that support the flag — some builds 400 on it,
+  // so chatSend() retries once without it.
+  if(/qwen3|deepseek-r1|magistral|gpt-oss|thinking/i.test(model))b.think=false;
+  return b;
+}
+// Strip on the ACCUMULATED string, not per delta — a <think> tag can straddle chunk boundaries.
+// Tolerates a stream aborted mid-block (an unterminated trailing <think> is also dropped).
+const stripThink=s=>s.replace(/<think>[\s\S]*?<\/think>/gi,"").replace(/<think>[\s\S]*$/i,"");
+
+// One line per full NDJSON object — never JSON.parse a raw chunk, since a network chunk can split
+// a line anywhere. Keeps the tail in `buf` until a newline arrives; tolerates an unparseable line
+// rather than aborting the whole response.
+async function chatStreamOnce(ep,body,onToken){
+  const res=await fetch(ep+"/api/chat",{
+    method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify(body),signal:chatAbortCtl.signal
+  });
+  if(!res.ok){
+    let bodyText="";
+    try{bodyText=await res.text();}catch(e){/* ignore */}
+    const err=new Error(bodyText||("HTTP "+res.status));
+    err.status=res.status;err.body=bodyText;
+    throw err;
+  }
+  const reader=res.body.getReader(), decoder=new TextDecoder();
+  let buf="";
+  for(;;){
+    const {done,value}=await reader.read();
+    if(done)return;
+    buf+=decoder.decode(value,{stream:true});
+    let nl;
+    while((nl=buf.indexOf("\n"))>=0){
+      const line=buf.slice(0,nl);buf=buf.slice(nl+1);
+      if(!line.trim())continue;
+      let obj;
+      try{obj=JSON.parse(line);}catch(e){continue;}
+      if(obj.message&&typeof obj.message.content==="string")onToken(obj.message.content);
+      if(obj.done)return;
+    }
+  }
+}
+function chatErrorMessage(e,model){
+  if(e.status===404||/not found/i.test(e.body||e.message||""))
+    return `Model "${model}" isn't installed. Run: ollama pull ${model}`;
+  if(e.status)return `Ollama returned HTTP ${e.status}: ${(e.body||e.message||"").slice(0,200)}`;
+  return "Couldn't reach Ollama at "+state.chat.endpoint+".";
+}
+// Which send failures mean our idea of the connection is stale. A 404 / "not found" means Ollama IS
+// reachable and the model is simply gone, so that routes to the picker rather than back to Connect;
+// no HTTP status at all means we never reached it. Anything else is a real error from a reachable
+// Ollama and stays an inline bubble.
+function chatFailKind(e){
+  if(e.status===404||/not found/i.test(e.body||e.message||""))return "model";
+  if(!e.status)return "down";
+  return "";
+}
+// bubble.textContent, ALWAYS — never innerHTML. Model output is untrusted; textContent plus
+// white-space:pre-wrap preserves the model's own line breaks for free and is the rule that
+// survives someone later adding markdown rendering without thinking about it first.
+function appendChatBubble(role,text){
+  const log=document.getElementById("chatLog");
+  const div=document.createElement("div");
+  div.className="cp-msg "+role;
+  div.textContent=text;
+  log.appendChild(div);
+  log.scrollTop=log.scrollHeight;
+  return div;
+}
+function appendChatErrorBubble(text){
+  const div=appendChatBubble("assistant",text);
+  div.classList.add("error");
+  return div;
+}
+function chatAutoGrow(el){el.style.height="auto";el.style.height=Math.min(110,el.scrollHeight)+"px";}
+
+async function chatSend(){
+  const input=document.getElementById("chatInput"),sendBtn=document.getElementById("chatSend");
+  if(chatAbortCtl){chatAbortCtl.abort();return;}   // the same button is the Stop button while streaming
+  const text=input.value.trim();
+  if(!text||!state.chat.model||input.disabled)return;
+
+  const log=document.getElementById("chatLog");
+  const emptyEl=log.querySelector(".empty");if(emptyEl)emptyEl.remove();
+
+  const userMsg={role:"user",text:text.slice(0,MAX_CHAT_CHARS),ts:new Date().toISOString()};
+  state.chat.messages.push(userMsg);
+  state.chat.messages=state.chat.messages.slice(-MAX_CHAT_MSGS);
+  appendChatBubble("user",userMsg.text);
+  input.value="";chatAutoGrow(input);
+
+  const bubble=appendChatBubble("assistant","");
+  const cursor=document.createElement("span");cursor.className="cp-cursor";bubble.appendChild(cursor);
+
+  sendBtn.textContent="Stop";sendBtn.classList.add("stop");
+  input.disabled=true;
+  chatAbortCtl=new AbortController();
+
+  let body=chatBody(chatWire(),state.chat.model);
+  let acc="",needRender=false;
+  const onToken=tok=>{acc+=tok;bubble.textContent=stripThink(acc);bubble.appendChild(cursor);
+    log.scrollTop=log.scrollHeight;};
+
+  try{
+    try{
+      await chatStreamOnce(state.chat.endpoint,body,onToken);
+    }catch(e1){
+      if(e1.name==="AbortError")throw e1;
+      // HTTP 400 + "think" → drop the flag and retry once, rather than surfacing a flag this
+      // particular model build doesn't understand as a user-facing error.
+      if(e1.status===400&&/think/i.test(e1.body||"")&&body.think!==undefined){
+        delete body.think;acc="";
+        await chatStreamOnce(state.chat.endpoint,body,onToken);
+      }else throw e1;
+    }
+    cursor.remove();
+    const finalText=stripThink(acc).trim()||"(no response)";
+    bubble.textContent=finalText;
+    state.chat.messages.push({role:"assistant",text:finalText,ts:new Date().toISOString()});
+    state.chat.messages=state.chat.messages.slice(-MAX_CHAT_MSGS);
+  }catch(e){
+    cursor.remove();
+    if(e.name==="AbortError"){
+      // Stop keeps whatever streamed — that is what a stop button is for.
+      const finalText=stripThink(acc).trim();
+      bubble.textContent=finalText||"(stopped)";
+      if(finalText){
+        state.chat.messages.push({role:"assistant",text:finalText,ts:new Date().toISOString()});
+        state.chat.messages=state.chat.messages.slice(-MAX_CHAT_MSGS);
+      }
+    }else{
+      bubble.remove();
+      // A connection-shaped failure means our idea of "connected" is stale. Drop back to the right
+      // step instead of leaving an enabled composer that will fail the same way again — the
+      // transcript, including the message that just failed, is already in state.chat.messages and
+      // stays on screen with the step card underneath it.
+      const fail=chatFailKind(e);
+      if(fail==="model"){
+        chatConn.models=chatConn.models.filter(m=>m!==state.chat.model);
+        state.chat.model="";
+        needRender=true;
+      }else if(fail){
+        chatConn.ok=false;chatConn.checked=true;chatConn.kind=fail;
+        needRender=true;
+      }else{
+        appendChatErrorBubble(chatErrorMessage(e,state.chat.model));
+      }
+    }
+  }finally{
+    chatAbortCtl=null;
+    sendBtn.textContent="Send";sendBtn.classList.remove("stop");
+    save();   // exactly once, in finally — never inside the stream loop
+    if(needRender){
+      chatRefreshChat();   // the step card explains the failure; the renderer owns the composer state
+    }else{
+      input.disabled=false;input.focus();
+    }
+  }
+}
+
+/* ---------- diagnostics ----------
+   The browser hides CORS detail from JS on purpose: a refused connection and a CORS rejection are
+   the SAME TypeError ("Failed to fetch"). Worse, Ollama returns a real HTTP 403 for a disallowed
+   origin, and the browser refuses to expose that response body to a normal fetch.
+
+   A mode:"no-cors" probe recovers the distinction: it resolves to an opaque response for ANY http
+   status (including that 403) and rejects only on a genuine network failure. It does not bypass
+   the CSP, which already permits this URL — connect-src is a prerequisite for this diagnostic,
+   not just for the feature.
+
+   Caveat: Safari has rejected no-cors fetches for unrelated reasons in the past, so a "down"
+   verdict immediately following an earlier successful call in the same session is presented as
+   "couldn't tell" rather than "not running" — see chatStatusText(). */
+async function chatProbe(ep,{timeout=4000,diagnose=true}={}){
+  if(!CHAT_LOOPBACK.test(ep))return {kind:"badurl"};
+  try{
+    const r=await fetch(ep+"/api/tags",{signal:AbortSignal.timeout(timeout)});
+    if(!r.ok)return {kind:"error",status:r.status};
+    const d=await r.json().catch(()=>({}));
+    return {kind:"ok",models:(Array.isArray(d.models)?d.models:[]).map(m=>m&&m.name).filter(Boolean)};
+  }catch(e){
+    if(e.name==="TimeoutError")return {kind:"slow"};
+    // The silent check on panel open passes diagnose:false — it only needs to know "not working",
+    // and skipping this second leg keeps a dead Ollama to one short timeout instead of two. The
+    // cors-vs-down distinction costs another round trip and is only worth paying for once the user
+    // has actually pressed Connect and is waiting for an explanation.
+    if(!diagnose)return {kind:"down",undiagnosed:true};
+    try{
+      await fetch(ep+"/api/tags",{mode:"no-cors",signal:AbortSignal.timeout(timeout)});
+      return {kind:"cors"};    // something answered (maybe Ollama's 403) → render the setup guide
+    }catch(e2){
+      return {kind:"down"};    // nothing there → "is Ollama running?"
+    }
+  }
+}
+
+/* ---------- reachability — the in-app setup guide ----------
+   Branches on location.protocol so a user already on http://localhost is never shown the env-var
+   dance. The four-letter word that a locally-opened file sends as its Origin must NEVER be quoted
+   as OLLAMA_ORIGINS's own value anywhere in this guide's copy — gin-contrib/cors panics on that
+   exact value and takes Ollama down at startup. "nul*" (which contains a "*", so it passes
+   validation) matches that Origin by prefix without allowing every website the user visits the
+   way a bare "*" would. */
+// Shown right after the default `ollama pull qwen3:4b` line in both reachable branches below.
+// qwen3:4b stays the default (Apache-2.0, ~2.5GB, strong instruction-following at 4B); these are
+// named alternatives, not a competing recommendation.
+const MODEL_ALT_HTML=`<p class="note" style="margin:4px 0 0">Prefer a different model? <b>gemma3:4b</b>
+      is lighter on RAM (~3.3GB on disk, ~4.2GB resident at an 8k context) but ships under the
+      <b>Gemma Terms</b> license, not Apache-2.0 — read them before redistributing anything built on
+      it. <b>qwen3:8b</b> gives noticeably better answers than the 4B default if you have roughly 8GB
+      of free RAM to spare; same license and <code>think:false</code> handling as qwen3:4b.</p>`;
+function chatGuideHTML(kind,status){
+  const lead=kind==="cors"
+    ?"<p><b>Ollama is running, but it refused this page.</b> That's a CORS setting, and it's fixable below.</p>"
+    :kind==="down"
+    ?"<p><b>Nothing answered.</b> Is Ollama installed and running? Check with <code>ollama list</code> in a terminal.</p>"
+    :kind==="slow"
+    ?"<p><b>Ollama didn't answer in time.</b> It may still be starting up, or loading a model into memory — give it a moment and try again.</p>"
+    :kind==="error"
+    ?`<p><b>Ollama answered with HTTP ${esc(String(status||"?"))}.</b> It's running and reachable, so this is something wrong on its side rather than a setup problem.</p>`
+    :kind==="badurl"
+    ?"<p><b>That address isn't on this machine.</b> The assistant only ever talks to <code>127.0.0.1</code> or <code>localhost</code>, on any port.</p>"
+    :"";
+  let branch;
+  if(location.protocol==="file:"){
+    branch=`<h4>Opening this file directly</h4>
+      <p>Ollama's default settings don't recognize the origin a locally-opened file sends
+      (the browser reports it as <code>Origin: null</code>), so out of the box the assistant can't
+      connect. First, install a model if you haven't:</p>
+      <pre>ollama pull qwen3:4b</pre>
+      <button type="button" class="cp-copy" data-copy="ollama pull qwen3:4b">Copy</button>
+      ${MODEL_ALT_HTML}
+      <p><b>Option 1 — tell Ollama to allow this page</b> (macOS shown; Linux/Windows: set the same
+      environment variable for the Ollama service, then restart it):</p>
+      <pre>launchctl setenv OLLAMA_ORIGINS "nul*"</pre>
+      <button type="button" class="cp-copy" data-copy='launchctl setenv OLLAMA_ORIGINS &quot;nul*&quot;'>Copy</button>
+      <p>then quit and reopen the Ollama app. <code>nul*</code> is narrower than a bare
+      <code>*</code> — it matches only the null origin a locally-opened file sends, not every site
+      you visit — but it isn't a perfect fence: any page can open a sandboxed iframe, which also
+      gets origin null. If it doesn't take effect, the documented fallback is the broader
+      <code>*</code>:</p>
+      <pre>launchctl setenv OLLAMA_ORIGINS "*"</pre>
+      <button type="button" class="cp-copy" data-copy='launchctl setenv OLLAMA_ORIGINS &quot;*&quot;'>Copy</button>
+      <p><b>Option 2 — change nothing in Ollama.</b> Serve this page from an origin Ollama already
+      allows by default instead of opening it directly:</p>
+      <pre>python3 -m http.server 8000</pre>
+      <button type="button" class="cp-copy" data-copy="python3 -m http.server 8000">Copy</button>
+      <p>then open <code>http://localhost:8000/</code> plus this file's name in your browser, and
+      press Test connection again.</p>`;
+  }else if(CHAT_LOOPBACK.test(location.origin)){
+    branch=`<h4>Good news</h4>
+      <p>Ollama already allows this page's origin by default — just install a model and press
+      Test connection.</p>
+      <pre>ollama pull qwen3:4b</pre>
+      <button type="button" class="cp-copy" data-copy="ollama pull qwen3:4b">Copy</button>
+      ${MODEL_ALT_HTML}`;
+  }else{
+    branch=`<h4>This page isn't on your own machine</h4>
+      <p>The assistant only ever talks to <code>127.0.0.1</code> / <code>localhost</code>, on any
+      port — your own computer. It cannot reach this page's host, and nothing here can reach
+      anywhere else.</p>`;
+  }
+  return `<div class="cp-guide">${lead}${branch}</div>`;
+}
+
+/* ---------- panel state machine ----------
+   chatConn is EPHEMERAL on purpose: it describes the world outside the browser, not the user's
+   data, so it is never persisted and never sanitized. A stale "connected" restored from
+   localStorage would be worse than no memory at all — the panel would look ready and then fail on
+   the first send.
+
+   renderChatLog() is the ONLY function permitted to write to #chatLog. The settings Test button
+   used to write there directly, which could erase an un-acknowledged disclaimer card; routing every
+   surface through one renderer is what stops that class of bug coming back. */
+let chatConn={
+  checked:false,   // has a probe run at all this session (gates the once-per-open silent check)
+  ok:false,        // did the last probe succeed
+  everOk:false,    // ever succeeded this session — drives the Safari no-cors caveat wording
+  busy:false,      // a probe is in flight
+  models:[],       // names from the last successful probe
+  kind:"",         // last failure: cors | down | slow | error | badurl
+  status:0         // HTTP status when kind==="error"
+};
+let chatAdvOpen=false;        // keep "Change address" open across re-renders while editing
+let chatWantModelPick=false;  // set by the header badge to revisit the picker while connected
+
+function chatStep(){
+  if(!state.chat.ack)return "ack";
+  if(!chatConn.ok)return "connect";
+  // A saved model that is no longer installed sends the user back to the picker with an
+  // explanation, rather than being silently swapped for whatever happens to be first in the list.
+  if(!state.chat.model||!chatConn.models.includes(state.chat.model))return "model";
+  if(chatWantModelPick)return "model";
+  return "chat";
+}
+function chatStatusText(){
+  if(chatConn.busy)return "Checking…";
+  if(chatConn.ok)return "Connected — "+chatConn.models.length+" model"+
+    (chatConn.models.length===1?"":"s")+" installed.";
+  if(!chatConn.checked)return "";
+  if(chatConn.kind==="cors")return "Ollama is running, but it refused this page.";
+  if(chatConn.kind==="slow")return "Timed out waiting for "+state.chat.endpoint+".";
+  if(chatConn.kind==="error")return "Ollama responded with an error (HTTP "+chatConn.status+").";
+  if(chatConn.kind==="badurl")return "That isn't a loopback address (127.0.0.1, localhost or [::1]).";
+  return chatConn.everOk
+    ?"Couldn't tell this time — the browser console has the exact error."
+    :"Nothing answered at "+state.chat.endpoint+".";
+}
+
+/* ---------- step cards ----------
+   App-authored markup, so innerHTML is fine here — but anything that came from outside (a model
+   name from /api/tags, the user's own endpoint) still goes through esc(). */
+function chatAckCardHTML(){
+  return `<div class="cp-ack">
+    <p><b>Before you start</b></p>
+    <p>This is an AI language model running on your own computer. It reads a summary of the
+    figures you've entered and answers in plain English.</p>
+    <p>It can be confidently wrong. It sees only the summary — not your individual holdings, not
+    the market, not your tax situation — and it cannot change anything in SomiFinance.
+    <b>Nothing it says is financial, tax or legal advice.</b> Decisions are yours.</p>
+    <p>Your conversation is saved in this browser and is included in Export files.</p>
+    <button type="button" data-chatact="ack">I understand</button></div>`;
+}
+function chatAdvHTML(){
+  return `<details class="cp-adv"${chatAdvOpen?" open":""}><summary>Change address</summary>
+    <input type="text" maxlength="120" data-chatact="endpoint" aria-label="Ollama address"
+      autocomplete="off" spellcheck="false" value="${esc(state.chat.endpoint)}">
+    <p class="cp-status">Only <code>127.0.0.1</code> or <code>localhost</code>, any port. Leave this
+    alone unless you changed the port Ollama listens on.</p></details>`;
+}
+function chatConnectCardHTML(){
+  const failed=chatConn.checked&&!chatConn.ok&&!chatConn.busy;
+  const label=chatConn.busy?"Checking…":(failed?"Try again":"Connect");
+  return `<div class="cp-step">
+    <h4>Connect the assistant</h4>
+    <p>The assistant runs on your own computer using <a href="https://ollama.com" target="_blank"
+    rel="noopener noreferrer">Ollama ↗</a>, a free app that runs AI models locally.
+    <b>There's no API key, no account and no sign-up</b> — and nothing you type here ever leaves
+    your machine.</p>
+    <p>Don't have it yet? Install Ollama, then run this in a terminal:</p>
+    <pre>ollama pull qwen3:4b</pre>
+    <button type="button" class="cp-copy" data-copy="ollama pull qwen3:4b">Copy</button>
+    <button type="button" class="cp-primary" data-chatact="connect"${chatConn.busy?" disabled":""}>${label}</button>
+    ${failed?`<p class="cp-status bad">${esc(chatStatusText())}</p>`+chatGuideHTML(chatConn.kind,chatConn.status):""}
+    ${chatAdvHTML()}</div>`;
+}
+function chatModelCardHTML(){
+  const models=chatConn.models,cur=state.chat.model;
+  const again=`<button type="button" class="cp-primary" data-chatact="connect"${chatConn.busy?" disabled":""}>${chatConn.busy?"Checking…":"Check again"}</button>`;
+  if(!models.length){
+    return `<div class="cp-step">
+      <h4>No models installed</h4>
+      <p>Ollama is running, but it doesn't have any models yet. Install the recommended one:</p>
+      <pre>ollama pull qwen3:4b</pre>
+      <button type="button" class="cp-copy" data-copy="ollama pull qwen3:4b">Copy</button>
+      ${MODEL_ALT_HTML}
+      ${again}${chatAdvHTML()}</div>`;
+  }
+  const missing=cur&&!models.includes(cur);
+  return `<div class="cp-step">
+    <h4>Choose a model</h4>
+    ${missing?`<p class="cp-status bad">The model you were using (<code>${esc(cur)}</code>) isn't
+      installed any more. Pick another.</p>`:""}
+    <p>${models.length} model${models.length===1?"":"s"} installed on your machine.</p>
+    ${models.map(m=>`<button type="button" class="cp-model" data-chatmodel="${esc(m)}" aria-current="${m===cur}">${esc(m)}</button>`).join("")}
+    ${again}${chatAdvHTML()}</div>`;
+}
+
+function renderChatLog(){
+  const log=document.getElementById("chatLog"),input=document.getElementById("chatInput"),
+    sendBtn=document.getElementById("chatSend"),badge=document.getElementById("cpModelBadge");
+  const step=chatStep();
+  // :empty hides the badge, so clearing the text is what takes it off screen outside the chat step
+  if(badge)badge.textContent=(step==="chat"&&state.chat.model)?("· "+state.chat.model):"";
+  log.innerHTML="";
+  // The ack gate is the one step that hides the transcript — nothing should be readable before the
+  // disclaimer is accepted, and an imported backup can carry ack:false alongside messages.
+  if(step==="ack"){
+    log.innerHTML=chatAckCardHTML();
+    input.disabled=true;sendBtn.disabled=true;
+    return;
+  }
+  // Every other step appends BELOW the transcript, so losing the connection mid-conversation
+  // doesn't look like the conversation was wiped.
+  if(state.chat.messages.length){
+    state.chat.messages.forEach(m=>{
+      const d=document.createElement("div");
+      d.className="cp-msg "+m.role;
+      d.textContent=m.text;   // saved transcript text — still never innerHTML
+      log.appendChild(d);
+    });
+  }else if(step==="chat"){
+    const d=document.createElement("div");
+    d.className="empty";d.textContent="Ask something about your figures.";
+    log.appendChild(d);
+  }
+  if(step!=="chat"){
+    const wrap=document.createElement("div");
+    wrap.innerHTML=step==="connect"?chatConnectCardHTML():chatModelCardHTML();
+    while(wrap.firstChild)log.appendChild(wrap.firstChild);
+  }
+  const ready=step==="chat";
+  input.disabled=!ready;sendBtn.disabled=!ready;
+  log.scrollTop=log.scrollHeight;
+}
+
+/* ---------- the shared connection implementation ----------
+   Three functions, and nothing else in the file probes, sets a model, or sets an endpoint. Both the
+   panel and the ⚙ section call these, which is what keeps the two surfaces from drifting apart the
+   way they did when each carried its own copy. */
+async function chatConnect(ep,{timeout=4000,diagnose=true,silent=false}={}){
+  chatConn.busy=true;chatRefreshChat();
+  const res=await chatProbe(ep,{timeout,diagnose});
+  chatConn.busy=false;
+  chatConn.checked=true;
+  chatConn.ok=res.kind==="ok";
+  chatConn.kind=chatConn.ok?"":res.kind;
+  chatConn.status=res.status||0;
+  if(chatConn.ok){
+    chatConn.everOk=true;
+    chatConn.models=res.models||[];
+    chatWantModelPick=false;
+  }else if(!silent){
+    // A deliberate test that fails should show an honest empty list; the silent open-check keeps
+    // whatever it knew so a transient blip doesn't wipe the picker.
+    chatConn.models=[];
+  }
+  chatRefreshChat();
+  return res;
+}
+function chatSetModel(name){
+  state.chat.model=name;
+  chatWantModelPick=false;
+  save();chatRefreshChat();
+}
+function chatSetEndpoint(v){
+  const clean=(v||"").trim().replace(/\/+$/,"");
+  const okUrl=CHAT_LOOPBACK.test(clean);
+  state.chat.endpoint=okUrl?clean:CHAT_ENDPOINT_DEFAULT;
+  // a new address invalidates everything we knew about the old one
+  chatConn.ok=false;chatConn.models=[];
+  if(!okUrl){chatConn.checked=true;chatConn.kind="badurl";}
+  save();chatRefreshChat();
+  return okUrl;
+}
+// Always both surfaces together — the panel showing a setup guide while ⚙ still said "connected"
+// was one of the original bugs.
+function chatRefreshChat(){
+  renderChatLog();
+  setSectionCurrent();
+  if(document.getElementById("chatSetItems"))renderChatSettings();
+}
+
+async function chatOpen(){
+  document.getElementById("chatPanel").hidden=false;
+  document.getElementById("chatFab").setAttribute("aria-expanded","true");
+  renderChatLog();   // paint first — the panel must never block on the network to appear
+  // Once per page load: a stored model says nothing about whether Ollama is reachable right now.
+  // The short timeout and diagnose:false keep a dead Ollama to ~1.5s rather than the 8s a full
+  // two-leg probe would cost on every first open; the detailed verdict comes from Connect.
+  if(state.chat.ack&&!chatConn.checked&&!chatConn.busy){
+    await chatConnect(state.chat.endpoint,{timeout:1500,diagnose:false,silent:true});
+  }
+  const input=document.getElementById("chatInput");
+  if(!input.disabled)input.focus();
+}
+function closeChatPanel(){
+  document.getElementById("chatPanel").hidden=true;
+  document.getElementById("chatFab").setAttribute("aria-expanded","false");
+  chatWantModelPick=false;   // reopening goes back to the conversation, not the picker
+}
+function chatClearConversation(){
+  state.chat.messages=[];save();renderChatLog();toast("Conversation cleared");
+}
+
+/* ---------- settings section ----------
+   Both documented gotchas apply: scope every querySelectorAll to a [data-chatset] attribute of
+   our own, never the shared .theme-opt class (five other pickers use it); and stopPropagation()
+   on the endpoint input so typing in it can't be read as a menu-closing outside click. */
+function renderChatSettings(){
+  const ep=(state.chat&&state.chat.endpoint)||CHAT_ENDPOINT_DEFAULT;
+  const cur=(state.chat&&state.chat.model)||"";
+  // Reads chatConn.models, so it survives boot()'s unconditional re-render instead of collapsing
+  // back to a single option the way a locally-held list did.
+  const opts=chatConn.models.length
+    ?chatConn.models.map(m=>`<option value="${esc(m)}"${m===cur?" selected":""}>${esc(m)}</option>`).join("")
+    :`<option value="${esc(cur)}">${cur?esc(cur):"Press Test connection to load models"}</option>`;
+  document.getElementById("chatSetItems").innerHTML=`
+    <input class="set-input" id="chatEndpointInput" type="text" maxlength="120"
+      placeholder="${esc(CHAT_ENDPOINT_DEFAULT)}" autocomplete="off" aria-label="Assistant endpoint"
+      value="${esc(ep)}">
+    <button type="button" class="add-row" id="chatTestBtn" style="width:100%;margin-top:0"${chatConn.busy?" disabled":""}>${chatConn.busy?"Testing…":"Test connection"}</button>
+    <div class="cp-status" id="chatTestResult">${esc(chatStatusText())}</div>
+    <select class="set-input" id="chatModelSelect" data-chatset="model" aria-label="Assistant model" style="margin-top:8px">${opts}</select>`;
+
+  const epInput=document.getElementById("chatEndpointInput");
+  // typing/clicking here must not reach the global 1-6 tab shortcut or the menu's outside-click closer
+  epInput.addEventListener("click",e=>e.stopPropagation());
+  epInput.addEventListener("change",()=>chatSetEndpoint(epInput.value));
+  document.getElementById("chatTestBtn").addEventListener("click",e=>{
+    e.stopPropagation();
+    const v=document.getElementById("chatEndpointInput").value;
+    if(!chatSetEndpoint(v))return;   // badurl is already surfaced by chatSetEndpoint()
+    chatConnect(state.chat.endpoint);
+  });
+  // scoped to [data-chatset], never the shared .theme-opt class — a broad selector has cleared
+  // other pickers' checkmarks before (see renderNameList()/renderGoalList())
+  document.querySelectorAll('[data-chatset="model"]').forEach(sel=>{
+    sel.addEventListener("click",e=>e.stopPropagation());
+    sel.addEventListener("change",()=>chatSetModel(sel.value));
+  });
+}
+
+function initChat(){
+  const fab=document.getElementById("chatFab"),panel=document.getElementById("chatPanel");
+  fab.addEventListener("click",()=>{panel.hidden?chatOpen():closeChatPanel();});
+  document.getElementById("chatClose").addEventListener("click",closeChatPanel);
+  document.getElementById("chatClear").addEventListener("click",chatClearConversation);
+  const input=document.getElementById("chatInput");
+  input.addEventListener("input",()=>chatAutoGrow(input));
+  input.addEventListener("keydown",e=>{
+    if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();chatSend();}
+  });
+  document.getElementById("chatSend").addEventListener("click",chatSend);
+  // Once connected, the model badge is the only way back to the picker.
+  document.getElementById("cpModelBadge").addEventListener("click",()=>{
+    if(chatStep()!=="chat")return;
+    chatWantModelPick=true;renderChatLog();
+  });
+  // Step cards are rebuilt on every state change, so their controls are handled by delegation
+  // rather than re-bound per render. #chatLog is the only surface they ever live on.
+  const log=document.getElementById("chatLog");
+  log.addEventListener("click",e=>{
+    // copy buttons — the clipboard API can be unavailable on file://, so this is a silent no-op
+    // fallback; the command text is visible and selectable regardless
+    const copyBtn=e.target.closest("[data-copy]");
+    if(copyBtn){
+      if(navigator.clipboard&&navigator.clipboard.writeText){
+        navigator.clipboard.writeText(copyBtn.dataset.copy).then(()=>toast("Copied")).catch(()=>{});
+      }
+      return;
+    }
+    const modelBtn=e.target.closest("[data-chatmodel]");
+    if(modelBtn){
+      chatSetModel(modelBtn.dataset.chatmodel);
+      const i=document.getElementById("chatInput");
+      if(!i.disabled)i.focus();
+      return;
+    }
+    const act=e.target.closest("[data-chatact]");
+    if(!act)return;
+    if(act.dataset.chatact==="ack"){
+      state.chat.ack=true;save();renderChatLog();
+      const next=log.querySelector('[data-chatact="connect"]');
+      if(next)next.focus();
+    }else if(act.dataset.chatact==="connect"){
+      chatConnect(state.chat.endpoint);
+    }
+  });
+  log.addEventListener("change",e=>{
+    const ep=e.target.closest('[data-chatact="endpoint"]');
+    if(ep)chatSetEndpoint(ep.value);
+  });
+  // `toggle` does not bubble, so this listens in the capture phase. Remembering the open state
+  // keeps "Change address" from snapping shut under the user on the re-render their own edit causes.
+  log.addEventListener("toggle",e=>{
+    const d=e.target.closest&&e.target.closest(".cp-adv");
+    if(d)chatAdvOpen=d.open;
+  },true);
+}
+
 /* ---------- boot ---------- */
 function boot(rerender){
   applyTheme(state.theme||"terminal");
@@ -2705,6 +3850,8 @@ function boot(rerender){
   renderCurList();
   renderGoalList();
   renderNameList();
+  renderChatSettings();
+  renderChatLog();
   setSectionCurrent();
   applyChromeI18n();
   applyGreeting();
@@ -2727,6 +3874,7 @@ function init(){
   initCalendarReorder();
   initLiveCalResize();
   initSettingsSections();
+  initChat();
 
   // future-spend assumptions (static inputs — wired once, values set on each render)
   document.getElementById("fRate").addEventListener("change",e=>{
@@ -2760,7 +3908,7 @@ function init(){
   });
 
   document.addEventListener("keydown",e=>{
-    if(e.key==="Escape"){closeMenu();closeThemeMenu();}
+    if(e.key==="Escape"){closeMenu();closeThemeMenu();closeChatPanel();}
     if(["1","2","3","4","5","6"].includes(e.key)&&!/input|select|textarea/i.test(document.activeElement.tagName)){
       show(["overview","ledger","budget","macro","calendar","about"][+e.key-1]);
     }
@@ -2788,6 +3936,7 @@ function init(){
     if(k==="asset"){state.assets.push({id:uid(),name:"",cat:catsFor().defaults.asset,value:0,notes:""});save();renderLedger();}
     if(k==="liab"){state.liabilities.push({id:uid(),name:"",cat:catsFor().defaults.liab,value:0,notes:""});save();renderLedger();}
     if(k==="cal"){state.calendar.push({id:uid(),date:today(),event:"",imp:"Med",notes:""});save();renderCalendar();}
+    if(k==="goal"){state.goals.push({id:uid(),name:"",target:0,targetDate:"",fundedBy:"",monthly:0});save();renderGoals();}
   }));
 
   // banner buttons

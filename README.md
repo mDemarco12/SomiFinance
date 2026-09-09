@@ -29,6 +29,7 @@ SomiFinance is a single-page dashboard for tracking your net worth alongside the
 - Live totals for cash in, cash out, net cash flow, savings rate, and discretionary spend
 - Per-category spending limits with a spend-vs-limit chart
 - Future spend projection — models what your discretionary spending would be worth if invested instead, at a return rate and time horizon you set
+- **Savings goals** — set a target, a date and how much you'll put in each month, then pick which account category funds it. Progress is read straight from your ledger rather than tracked separately, so it updates itself as you update your accounts. Shows what you'd need per month to land on time, and warns when your goals together commit more than your net cash flow
 
 <img width="1999" height="1287" alt="Screenshot 2026-09-07 at 12 25 21" src="https://github.com/user-attachments/assets/5bc61c0c-7286-49c3-a933-2e4c61ed1583" />
 <img width="1999" height="1287" alt="Screenshot 2026-09-07 at 12 25 27" src="https://github.com/user-attachments/assets/22016437-5c56-4ff7-98e2-0db67f6e95f7" />
@@ -46,6 +47,13 @@ SomiFinance is a single-page dashboard for tracking your net worth alongside the
 - Drag either panel to reorder them, and drag the corner grip to resize the live feed to whatever height suits you — the size is remembered
 
 <img width="1999" height="1287" alt="Screenshot 2026-09-07 at 12 25 46" src="https://github.com/user-attachments/assets/c6307acf-e84d-44db-b778-f4c55337f389" />
+
+### ✦ AI assistant (optional, runs locally)
+- A chat panel that reads a summary of your figures and answers questions about them in plain English — "how am I doing against my goals?", "where is most of my spending going?"
+- **Runs entirely on your own machine** via [Ollama](https://ollama.com), a free app you install separately. **No API key, no account, no sign-up** — and nothing you type is sent anywhere off your computer
+- Setup happens in the panel itself: open ✦, press **Connect**, then pick from whichever models you have installed. If it can't reach Ollama, it tells you exactly why and shows the fix inline
+- **Read-only.** It can't change a single figure in your ledger. It receives category-level totals only — individual holding names and your free-text notes are never sent
+- It's a small local model: it can be confidently wrong, and nothing it says is financial advice. The panel says so, permanently
 
 ### Languages & currency
 - **Three languages** — English, 繁體中文 (Traditional Chinese), 简体中文 (Simplified Chinese), covering the app's headings, tabs, table columns, and buttons
@@ -88,12 +96,13 @@ Chart.js is bundled directly into the file rather than loaded from a CDN, so **o
 | TradingView | First time you open the Economic Calendar tab | The live calendar widget |
 | U.S. Treasury + BLS | Refresh on Macro Signals (or on load, if you turn auto-refresh on) | Latest yields and CPI |
 | open.er-api.com | Only when a non-USD currency is selected | Exchange rates |
+| Your own machine (`127.0.0.1`/`localhost`) | When you open the ✦ assistant panel (one quick check that Ollama is reachable) and when you send it a message | Local Ollama chat — never leaves your computer |
 
 Each fails gracefully — if a request doesn't go through, the app keeps working and falls back to manual entry or the last cached values.
 
 Two things enforce that rather than just promising it:
 
-- **A Content-Security-Policy** in the page head names the only three hosts the app may contact, so even a bug or an injection has nowhere to send your figures. Its `script-src` lists SHA-256 hashes instead of allowing inline script, which means injected event handlers won't run at all.
+- **A Content-Security-Policy** in the page head names every host the app may contact — three remote hosts, plus loopback ports for the optional local assistant — so even a bug or an injection has nowhere to send your figures off this machine. Its `script-src` lists SHA-256 hashes instead of allowing inline script, which means injected event handlers won't run at all. The loopback allowance is unroutable off-machine, but it does widen what injected script could reach on your own machine — see `PROJECT_STATUS.md` for the honest tradeoff.
 - **The TradingView widget is sandboxed.** It's third-party code, so it loads in an iframe with no same-origin access — it can't read your saved data or touch the page. Opening the Calendar tab does contact TradingView's servers, but they receive nothing about you beyond the request itself.
 
 Imported backups are treated as untrusted input: every field is validated against a whitelist and all row ids are regenerated, and nothing is written to storage until the imported file has rendered cleanly.

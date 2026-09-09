@@ -94,7 +94,7 @@ def load_leak_terms(public=None):
     if os.path.exists(path):
         with open(path, encoding="utf-8") as fh:
             d = json.load(fh)
-        for row in d.get("assets", []) + d.get("liabilities", []):
+        for row in d.get("assets", []) + d.get("liabilities", []) + d.get("goals", []):
             name = (row.get("name") or "").strip()
             # single tokens only — a multi-word name is prose, matched by structure instead
             if not name or " " in name or len(name) < 2:
@@ -204,7 +204,7 @@ def storage_block(key, legacy):
     )
 
 
-def seed_block(assets, liabilities, calendar, profile, onboarded, note):
+def seed_block(assets, liabilities, calendar, goals, profile, onboarded, note):
     """Render a seed() whose shared fields track the demo's — only data differs."""
     def rows(items):
         if not items:
@@ -238,6 +238,8 @@ function seed(){
     yields:[{date:"2026-08-20",y10:4.69,y20:5.05,y30:5.23}],
     inflation:[{date:"2026-07-31",cpi:3.2,note:"EXAMPLE — replace with latest print"}],
     calendar:%s,
+    goals:%s,
+    chat:{ack:false,endpoint:"http://127.0.0.1:11434",model:"",messages:[]},
     budget:seedBudget()
   };
 }""" % (
@@ -248,6 +250,7 @@ function seed(){
         rows(assets),
         rows(liabilities),
         rows(calendar),
+        rows(goals),
     )
 
 
@@ -322,6 +325,7 @@ USER = {
             assets=[],
             liabilities=[],
             calendar=RELEASES,
+            goals=[],
             profile="",
             onboarded=False,
             note=(
@@ -356,6 +360,7 @@ def personal_variant():
                 assets=d.get("assets", []),
                 liabilities=d.get("liabilities", []),
                 calendar=d.get("calendar", RELEASES),
+                goals=d.get("goals", []),
                 profile=d.get("name", ""),
                 onboarded=True,
                 note=(
