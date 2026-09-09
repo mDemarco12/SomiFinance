@@ -27,7 +27,7 @@
 -->
 <meta http-equiv="Content-Security-Policy" content="
   default-src 'none';
-  script-src 'sha256-LEfI6wtiATeJWC0ehfYamH0fHWvD5leT9b99SJsRVXU=' 'sha256-cAZuhbnBwlvU5X4iWNEln5PzCKkNK7ZuEmoA5Yd2rOM=' https://s3.tradingview.com;
+  script-src 'sha256-LEfI6wtiATeJWC0ehfYamH0fHWvD5leT9b99SJsRVXU=' 'sha256-JoAFmsof8SeGz3HGmMUv/XrHtqPtxU5ZHezPMoRWpps=' https://s3.tradingview.com;
   style-src 'unsafe-inline';
   img-src data: https:;
   connect-src https://home.treasury.gov https://api.bls.gov https://open.er-api.com http://127.0.0.1:* http://localhost:*;
@@ -447,7 +447,10 @@
   .cp-top{display:flex;align-items:center;gap:4px;padding:12px 14px;border-bottom:1px solid var(--line);
     background:var(--panel-2);flex:none}
   .cp-top .cp-title{font-size:13.5px;font-weight:600;display:flex;align-items:center;gap:8px;color:var(--ink)}
-  .cp-top .cp-badge{font-family:var(--mono);font-size:10.5px;color:var(--muted);font-weight:400}
+  /* a button, not a label: once connected this is the only way back to the model picker */
+  .cp-top .cp-badge{font-family:var(--mono);font-size:10.5px;color:var(--muted);font-weight:400;
+    background:none;border:0;padding:0;cursor:pointer}
+  .cp-top .cp-badge:hover{color:var(--amber)}
   .cp-top .cp-badge:empty{display:none}
   .cp-icon{margin-left:auto;background:none;border:0;color:var(--muted);cursor:pointer;font-size:15px;
     padding:5px 7px;border-radius:6px;line-height:1}
@@ -465,12 +468,44 @@
   @keyframes cpBlink{50%{opacity:0}}
   .cp-msg.error{border-color:var(--down);color:var(--down);background:color-mix(in srgb,var(--down) 10%,var(--panel-2))}
 
-  .cp-ack{background:var(--panel-2);border:1px solid var(--line);border-radius:10px;padding:14px;
+  .cp-ack,.cp-step{background:var(--panel-2);border:1px solid var(--line);border-radius:10px;padding:14px;
     font-size:13px;line-height:1.55;color:var(--muted)}
-  .cp-ack b{color:var(--ink)}
-  .cp-ack button{margin-top:10px;background:var(--amber);color:#1a1206;border:0;padding:8px 16px;
+  .cp-ack b,.cp-step b{color:var(--ink)}
+  .cp-ack button,.cp-primary{margin-top:10px;background:var(--amber);color:#1a1206;border:0;padding:8px 16px;
     border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit}
-  .cp-ack button:hover{filter:brightness(1.08)}
+  .cp-ack button:hover,.cp-primary:hover{filter:brightness(1.08)}
+  .cp-primary[disabled]{opacity:.5;cursor:not-allowed;filter:none}
+  .cp-step h4{margin:0 0 8px;font-size:13.5px;color:var(--ink)}
+  .cp-step p{margin:0 0 8px}
+  .cp-step a{color:var(--amber)}
+  .cp-step pre{background:var(--tape-bg);color:var(--ink);padding:9px 10px;border-radius:8px;
+    overflow-x:auto;font-family:var(--mono);font-size:12px;margin:0 0 6px}
+  .cp-step code{background:var(--tape-bg);color:var(--ink);padding:2px 5px;border-radius:4px;
+    font-family:var(--mono);font-size:12px}
+
+  /* one row per installed model, straight from Ollama's /api/tags */
+  .cp-model{display:block;width:100%;text-align:left;margin-top:6px;background:var(--panel);
+    border:1px solid var(--line);color:var(--ink);padding:9px 11px;border-radius:8px;cursor:pointer;
+    font-family:var(--mono);font-size:12.5px}
+  .cp-model:hover{border-color:var(--amber-dim)}
+  .cp-model[aria-current="true"]{border-color:var(--amber);color:var(--amber)}
+
+  /* "Change address" — collapsed by default. The default endpoint is right for almost everyone,
+     and a URL box is the wrong first thing to put in front of someone who has never run Ollama. */
+  .cp-adv{margin-top:10px}
+  .cp-adv summary{cursor:pointer;color:var(--muted);font-size:12px;list-style:none}
+  .cp-adv summary::-webkit-details-marker{display:none}
+  .cp-adv summary:before{content:"▸ ";font-size:10px}
+  .cp-adv[open] summary:before{content:"▾ "}
+  .cp-adv input{width:100%;margin-top:8px;background:var(--panel);border:1px solid var(--line);
+    color:var(--ink);border-radius:7px;padding:8px 9px;font-family:var(--mono);font-size:12px}
+  .cp-adv input:focus{outline:none;border-color:var(--amber)}
+
+  /* --muted, never --faint: same Latte contrast reason as .cp-fine below. This carries the
+     connection diagnosis, so it has to stay readable on every theme. */
+  .cp-status{font-size:12px;color:var(--muted);line-height:1.5;margin:8px 0 0}
+  .cp-step .cp-status{margin:8px 0 0}
+  .cp-status.bad{color:var(--down)}
 
   .cp-guide{font-size:13px;line-height:1.6;color:var(--muted)}
   .cp-guide h4{margin:12px 0 6px;font-size:13px;color:var(--ink)}
@@ -875,7 +910,9 @@
         <br><br>
         <b>The ✦ assistant is optional and runs entirely on your own computer</b> via
         <a href="https://ollama.com" target="_blank" rel="noopener noreferrer">Ollama</a>, a separate
-        free application you install yourself — nothing is bundled or downloaded by this page. Using
+        free application you install yourself — nothing is bundled or downloaded by this page. There
+        is no API key, no account and no sign-up: setup happens in the assistant panel itself — open
+        ✦, press <b>Connect</b>, then pick from whichever models you have installed. Using
         it means loosening the Content-Security-Policy to allow requests to
         <code>127.0.0.1</code>/<code>localhost</code> on any port, so injected script could in theory
         reach another local service on your machine; it still cannot reach anywhere off it. The
@@ -901,7 +938,7 @@
 <button type="button" class="chat-fab" id="chatFab" aria-haspopup="dialog" aria-expanded="false" aria-controls="chatPanel" title="Assistant">✦</button>
 <div class="chat-panel" id="chatPanel" role="dialog" aria-label="Assistant" hidden>
   <div class="cp-top">
-    <span class="cp-title">✦ Assistant<span class="cp-badge" id="cpModelBadge"></span></span>
+    <span class="cp-title">✦ Assistant<button type="button" class="cp-badge" id="cpModelBadge" title="Change model"></button></span>
     <button type="button" class="cp-icon" id="chatClear" title="Clear conversation" aria-label="Clear conversation">⌫</button>
     <button type="button" class="cp-icon" id="chatClose" title="Close" aria-label="Close assistant">✕</button>
   </div>
@@ -2515,7 +2552,10 @@ function setSectionCurrent(){
   document.getElementById("shCurGoal").textContent=g.label;
   const nm=((state.profile&&state.profile.name)||"").trim();
   document.getElementById("shCurName").textContent=nm||"Not set";
-  document.getElementById("shCurChat").textContent=(state.chat&&state.chat.model)||"Not set";
+  document.getElementById("shCurChat").textContent=
+    chatConn.busy?"Checking…":
+    (chatConn.checked&&!chatConn.ok)?"Not connected":
+    ((state.chat&&state.chat.model)||"Not set");
 }
 // sec=null collapses everything; otherwise exactly one section is open
 function openSetSection(sec){
@@ -3276,7 +3316,16 @@ function chatErrorMessage(e,model){
   if(e.status===404||/not found/i.test(e.body||e.message||""))
     return `Model "${model}" isn't installed. Run: ollama pull ${model}`;
   if(e.status)return `Ollama returned HTTP ${e.status}: ${(e.body||e.message||"").slice(0,200)}`;
-  return "Couldn't reach Ollama at "+state.chat.endpoint+". Check Settings ⚙ → Assistant → Test connection.";
+  return "Couldn't reach Ollama at "+state.chat.endpoint+".";
+}
+// Which send failures mean our idea of the connection is stale. A 404 / "not found" means Ollama IS
+// reachable and the model is simply gone, so that routes to the picker rather than back to Connect;
+// no HTTP status at all means we never reached it. Anything else is a real error from a reachable
+// Ollama and stays an inline bubble.
+function chatFailKind(e){
+  if(e.status===404||/not found/i.test(e.body||e.message||""))return "model";
+  if(!e.status)return "down";
+  return "";
 }
 // bubble.textContent, ALWAYS — never innerHTML. Model output is untrusted; textContent plus
 // white-space:pre-wrap preserves the model's own line breaks for free and is the rule that
@@ -3320,7 +3369,7 @@ async function chatSend(){
   chatAbortCtl=new AbortController();
 
   let body=chatBody(chatWire(),state.chat.model);
-  let acc="";
+  let acc="",needRender=false;
   const onToken=tok=>{acc+=tok;bubble.textContent=stripThink(acc);bubble.appendChild(cursor);
     log.scrollTop=log.scrollHeight;};
 
@@ -3353,13 +3402,31 @@ async function chatSend(){
       }
     }else{
       bubble.remove();
-      appendChatErrorBubble(chatErrorMessage(e,state.chat.model));
+      // A connection-shaped failure means our idea of "connected" is stale. Drop back to the right
+      // step instead of leaving an enabled composer that will fail the same way again — the
+      // transcript, including the message that just failed, is already in state.chat.messages and
+      // stays on screen with the step card underneath it.
+      const fail=chatFailKind(e);
+      if(fail==="model"){
+        chatConn.models=chatConn.models.filter(m=>m!==state.chat.model);
+        state.chat.model="";
+        needRender=true;
+      }else if(fail){
+        chatConn.ok=false;chatConn.checked=true;chatConn.kind=fail;
+        needRender=true;
+      }else{
+        appendChatErrorBubble(chatErrorMessage(e,state.chat.model));
+      }
     }
   }finally{
     chatAbortCtl=null;
     sendBtn.textContent="Send";sendBtn.classList.remove("stop");
-    input.disabled=false;input.focus();
     save();   // exactly once, in finally — never inside the stream loop
+    if(needRender){
+      chatRefreshChat();   // the step card explains the failure; the renderer owns the composer state
+    }else{
+      input.disabled=false;input.focus();
+    }
   }
 }
 
@@ -3375,18 +3442,23 @@ async function chatSend(){
 
    Caveat: Safari has rejected no-cors fetches for unrelated reasons in the past, so a "down"
    verdict immediately following an earlier successful call in the same session is presented as
-   "couldn't tell" rather than "not running" — see chatTest(). */
-async function chatProbe(ep){
+   "couldn't tell" rather than "not running" — see chatStatusText(). */
+async function chatProbe(ep,{timeout=4000,diagnose=true}={}){
   if(!CHAT_LOOPBACK.test(ep))return {kind:"badurl"};
   try{
-    const r=await fetch(ep+"/api/tags",{signal:AbortSignal.timeout(4000)});
+    const r=await fetch(ep+"/api/tags",{signal:AbortSignal.timeout(timeout)});
     if(!r.ok)return {kind:"error",status:r.status};
     const d=await r.json().catch(()=>({}));
     return {kind:"ok",models:(Array.isArray(d.models)?d.models:[]).map(m=>m&&m.name).filter(Boolean)};
   }catch(e){
     if(e.name==="TimeoutError")return {kind:"slow"};
+    // The silent check on panel open passes diagnose:false — it only needs to know "not working",
+    // and skipping this second leg keeps a dead Ollama to one short timeout instead of two. The
+    // cors-vs-down distinction costs another round trip and is only worth paying for once the user
+    // has actually pressed Connect and is waiting for an explanation.
+    if(!diagnose)return {kind:"down",undiagnosed:true};
     try{
-      await fetch(ep+"/api/tags",{mode:"no-cors",signal:AbortSignal.timeout(4000)});
+      await fetch(ep+"/api/tags",{mode:"no-cors",signal:AbortSignal.timeout(timeout)});
       return {kind:"cors"};    // something answered (maybe Ollama's 403) → render the setup guide
     }catch(e2){
       return {kind:"down"};    // nothing there → "is Ollama running?"
@@ -3409,11 +3481,17 @@ const MODEL_ALT_HTML=`<p class="note" style="margin:4px 0 0">Prefer a different 
       <b>Gemma Terms</b> license, not Apache-2.0 — read them before redistributing anything built on
       it. <b>qwen3:8b</b> gives noticeably better answers than the 4B default if you have roughly 8GB
       of free RAM to spare; same license and <code>think:false</code> handling as qwen3:4b.</p>`;
-function chatGuideHTML(kind){
+function chatGuideHTML(kind,status){
   const lead=kind==="cors"
     ?"<p><b>Ollama is running, but it refused this page.</b> That's a CORS setting, and it's fixable below.</p>"
     :kind==="down"
     ?"<p><b>Nothing answered.</b> Is Ollama installed and running? Check with <code>ollama list</code> in a terminal.</p>"
+    :kind==="slow"
+    ?"<p><b>Ollama didn't answer in time.</b> It may still be starting up, or loading a model into memory — give it a moment and try again.</p>"
+    :kind==="error"
+    ?`<p><b>Ollama answered with HTTP ${esc(String(status||"?"))}.</b> It's running and reachable, so this is something wrong on its side rather than a setup problem.</p>`
+    :kind==="badurl"
+    ?"<p><b>That address isn't on this machine.</b> The assistant only ever talks to <code>127.0.0.1</code> or <code>localhost</code>, on any port.</p>"
     :"";
   let branch;
   if(location.protocol==="file:"){
@@ -3457,63 +3535,211 @@ function chatGuideHTML(kind){
   return `<div class="cp-guide">${lead}${branch}</div>`;
 }
 
+/* ---------- panel state machine ----------
+   chatConn is EPHEMERAL on purpose: it describes the world outside the browser, not the user's
+   data, so it is never persisted and never sanitized. A stale "connected" restored from
+   localStorage would be worse than no memory at all — the panel would look ready and then fail on
+   the first send.
+
+   renderChatLog() is the ONLY function permitted to write to #chatLog. The settings Test button
+   used to write there directly, which could erase an un-acknowledged disclaimer card; routing every
+   surface through one renderer is what stops that class of bug coming back. */
+let chatConn={
+  checked:false,   // has a probe run at all this session (gates the once-per-open silent check)
+  ok:false,        // did the last probe succeed
+  everOk:false,    // ever succeeded this session — drives the Safari no-cors caveat wording
+  busy:false,      // a probe is in flight
+  models:[],       // names from the last successful probe
+  kind:"",         // last failure: cors | down | slow | error | badurl
+  status:0         // HTTP status when kind==="error"
+};
+let chatAdvOpen=false;        // keep "Change address" open across re-renders while editing
+let chatWantModelPick=false;  // set by the header badge to revisit the picker while connected
+
+function chatStep(){
+  if(!state.chat.ack)return "ack";
+  if(!chatConn.ok)return "connect";
+  // A saved model that is no longer installed sends the user back to the picker with an
+  // explanation, rather than being silently swapped for whatever happens to be first in the list.
+  if(!state.chat.model||!chatConn.models.includes(state.chat.model))return "model";
+  if(chatWantModelPick)return "model";
+  return "chat";
+}
+function chatStatusText(){
+  if(chatConn.busy)return "Checking…";
+  if(chatConn.ok)return "Connected — "+chatConn.models.length+" model"+
+    (chatConn.models.length===1?"":"s")+" installed.";
+  if(!chatConn.checked)return "";
+  if(chatConn.kind==="cors")return "Ollama is running, but it refused this page.";
+  if(chatConn.kind==="slow")return "Timed out waiting for "+state.chat.endpoint+".";
+  if(chatConn.kind==="error")return "Ollama responded with an error (HTTP "+chatConn.status+").";
+  if(chatConn.kind==="badurl")return "That isn't a loopback address (127.0.0.1, localhost or [::1]).";
+  return chatConn.everOk
+    ?"Couldn't tell this time — the browser console has the exact error."
+    :"Nothing answered at "+state.chat.endpoint+".";
+}
+
+/* ---------- step cards ----------
+   App-authored markup, so innerHTML is fine here — but anything that came from outside (a model
+   name from /api/tags, the user's own endpoint) still goes through esc(). */
+function chatAckCardHTML(){
+  return `<div class="cp-ack">
+    <p><b>Before you start</b></p>
+    <p>This is an AI language model running on your own computer. It reads a summary of the
+    figures you've entered and answers in plain English.</p>
+    <p>It can be confidently wrong. It sees only the summary — not your individual holdings, not
+    the market, not your tax situation — and it cannot change anything in SomiFinance.
+    <b>Nothing it says is financial, tax or legal advice.</b> Decisions are yours.</p>
+    <p>Your conversation is saved in this browser and is included in Export files.</p>
+    <button type="button" data-chatact="ack">I understand</button></div>`;
+}
+function chatAdvHTML(){
+  return `<details class="cp-adv"${chatAdvOpen?" open":""}><summary>Change address</summary>
+    <input type="text" maxlength="120" data-chatact="endpoint" aria-label="Ollama address"
+      autocomplete="off" spellcheck="false" value="${esc(state.chat.endpoint)}">
+    <p class="cp-status">Only <code>127.0.0.1</code> or <code>localhost</code>, any port. Leave this
+    alone unless you changed the port Ollama listens on.</p></details>`;
+}
+function chatConnectCardHTML(){
+  const failed=chatConn.checked&&!chatConn.ok&&!chatConn.busy;
+  const label=chatConn.busy?"Checking…":(failed?"Try again":"Connect");
+  return `<div class="cp-step">
+    <h4>Connect the assistant</h4>
+    <p>The assistant runs on your own computer using <a href="https://ollama.com" target="_blank"
+    rel="noopener noreferrer">Ollama ↗</a>, a free app that runs AI models locally.
+    <b>There's no API key, no account and no sign-up</b> — and nothing you type here ever leaves
+    your machine.</p>
+    <p>Don't have it yet? Install Ollama, then run this in a terminal:</p>
+    <pre>ollama pull qwen3:4b</pre>
+    <button type="button" class="cp-copy" data-copy="ollama pull qwen3:4b">Copy</button>
+    <button type="button" class="cp-primary" data-chatact="connect"${chatConn.busy?" disabled":""}>${label}</button>
+    ${failed?`<p class="cp-status bad">${esc(chatStatusText())}</p>`+chatGuideHTML(chatConn.kind,chatConn.status):""}
+    ${chatAdvHTML()}</div>`;
+}
+function chatModelCardHTML(){
+  const models=chatConn.models,cur=state.chat.model;
+  const again=`<button type="button" class="cp-primary" data-chatact="connect"${chatConn.busy?" disabled":""}>${chatConn.busy?"Checking…":"Check again"}</button>`;
+  if(!models.length){
+    return `<div class="cp-step">
+      <h4>No models installed</h4>
+      <p>Ollama is running, but it doesn't have any models yet. Install the recommended one:</p>
+      <pre>ollama pull qwen3:4b</pre>
+      <button type="button" class="cp-copy" data-copy="ollama pull qwen3:4b">Copy</button>
+      ${MODEL_ALT_HTML}
+      ${again}${chatAdvHTML()}</div>`;
+  }
+  const missing=cur&&!models.includes(cur);
+  return `<div class="cp-step">
+    <h4>Choose a model</h4>
+    ${missing?`<p class="cp-status bad">The model you were using (<code>${esc(cur)}</code>) isn't
+      installed any more. Pick another.</p>`:""}
+    <p>${models.length} model${models.length===1?"":"s"} installed on your machine.</p>
+    ${models.map(m=>`<button type="button" class="cp-model" data-chatmodel="${esc(m)}" aria-current="${m===cur}">${esc(m)}</button>`).join("")}
+    ${again}${chatAdvHTML()}</div>`;
+}
+
 function renderChatLog(){
   const log=document.getElementById("chatLog"),input=document.getElementById("chatInput"),
-    sendBtn=document.getElementById("chatSend");
-  const badge=document.getElementById("cpModelBadge");
-  if(badge)badge.textContent=state.chat.model?("· "+state.chat.model):"";
-  if(!state.chat.ack){
-    log.innerHTML="";
-    const card=document.createElement("div");
-    card.className="cp-ack";
-    card.innerHTML=`<p><b>Before you start</b></p>
-      <p>This is an AI language model running on your own computer. It reads a summary of the
-      figures you've entered and answers in plain English.</p>
-      <p>It can be confidently wrong. It sees only the summary — not your individual holdings, not
-      the market, not your tax situation — and it cannot change anything in SomiFinance.
-      <b>Nothing it says is financial, tax or legal advice.</b> Decisions are yours.</p>
-      <p>Your conversation is saved in this browser and is included in Export files.</p>
-      <button type="button" id="chatAckBtn">I understand</button>`;
-    log.appendChild(card);
-    document.getElementById("chatAckBtn").addEventListener("click",()=>{
-      state.chat.ack=true;save();renderChatLog();
-    });
-    input.disabled=true;sendBtn.disabled=true;
-    return;
-  }
-  if(!state.chat.model){
-    log.innerHTML=chatGuideHTML("")+
-      `<div class="note" style="margin-top:0">No model selected yet — once Ollama is reachable,
-       pick one in Settings ⚙ → Assistant.</div>`;
-    input.disabled=true;sendBtn.disabled=true;
-    return;
-  }
+    sendBtn=document.getElementById("chatSend"),badge=document.getElementById("cpModelBadge");
+  const step=chatStep();
+  // :empty hides the badge, so clearing the text is what takes it off screen outside the chat step
+  if(badge)badge.textContent=(step==="chat"&&state.chat.model)?("· "+state.chat.model):"";
   log.innerHTML="";
-  if(!state.chat.messages.length){
-    const d=document.createElement("div");
-    d.className="empty";d.textContent="Ask something about your figures.";
-    log.appendChild(d);
-  }else{
+  // The ack gate is the one step that hides the transcript — nothing should be readable before the
+  // disclaimer is accepted, and an imported backup can carry ack:false alongside messages.
+  if(step==="ack"){
+    log.innerHTML=chatAckCardHTML();
+    input.disabled=true;sendBtn.disabled=true;
+    return;
+  }
+  // Every other step appends BELOW the transcript, so losing the connection mid-conversation
+  // doesn't look like the conversation was wiped.
+  if(state.chat.messages.length){
     state.chat.messages.forEach(m=>{
       const d=document.createElement("div");
       d.className="cp-msg "+m.role;
       d.textContent=m.text;   // saved transcript text — still never innerHTML
       log.appendChild(d);
     });
+  }else if(step==="chat"){
+    const d=document.createElement("div");
+    d.className="empty";d.textContent="Ask something about your figures.";
+    log.appendChild(d);
   }
-  input.disabled=false;sendBtn.disabled=false;
+  if(step!=="chat"){
+    const wrap=document.createElement("div");
+    wrap.innerHTML=step==="connect"?chatConnectCardHTML():chatModelCardHTML();
+    while(wrap.firstChild)log.appendChild(wrap.firstChild);
+  }
+  const ready=step==="chat";
+  input.disabled=!ready;sendBtn.disabled=!ready;
   log.scrollTop=log.scrollHeight;
 }
-function chatOpen(){
+
+/* ---------- the shared connection implementation ----------
+   Three functions, and nothing else in the file probes, sets a model, or sets an endpoint. Both the
+   panel and the ⚙ section call these, which is what keeps the two surfaces from drifting apart the
+   way they did when each carried its own copy. */
+async function chatConnect(ep,{timeout=4000,diagnose=true,silent=false}={}){
+  chatConn.busy=true;chatRefreshChat();
+  const res=await chatProbe(ep,{timeout,diagnose});
+  chatConn.busy=false;
+  chatConn.checked=true;
+  chatConn.ok=res.kind==="ok";
+  chatConn.kind=chatConn.ok?"":res.kind;
+  chatConn.status=res.status||0;
+  if(chatConn.ok){
+    chatConn.everOk=true;
+    chatConn.models=res.models||[];
+    chatWantModelPick=false;
+  }else if(!silent){
+    // A deliberate test that fails should show an honest empty list; the silent open-check keeps
+    // whatever it knew so a transient blip doesn't wipe the picker.
+    chatConn.models=[];
+  }
+  chatRefreshChat();
+  return res;
+}
+function chatSetModel(name){
+  state.chat.model=name;
+  chatWantModelPick=false;
+  save();chatRefreshChat();
+}
+function chatSetEndpoint(v){
+  const clean=(v||"").trim().replace(/\/+$/,"");
+  const okUrl=CHAT_LOOPBACK.test(clean);
+  state.chat.endpoint=okUrl?clean:CHAT_ENDPOINT_DEFAULT;
+  // a new address invalidates everything we knew about the old one
+  chatConn.ok=false;chatConn.models=[];
+  if(!okUrl){chatConn.checked=true;chatConn.kind="badurl";}
+  save();chatRefreshChat();
+  return okUrl;
+}
+// Always both surfaces together — the panel showing a setup guide while ⚙ still said "connected"
+// was one of the original bugs.
+function chatRefreshChat(){
+  renderChatLog();
+  setSectionCurrent();
+  if(document.getElementById("chatSetItems"))renderChatSettings();
+}
+
+async function chatOpen(){
   document.getElementById("chatPanel").hidden=false;
   document.getElementById("chatFab").setAttribute("aria-expanded","true");
-  renderChatLog();
+  renderChatLog();   // paint first — the panel must never block on the network to appear
+  // Once per page load: a stored model says nothing about whether Ollama is reachable right now.
+  // The short timeout and diagnose:false keep a dead Ollama to ~1.5s rather than the 8s a full
+  // two-leg probe would cost on every first open; the detailed verdict comes from Connect.
+  if(state.chat.ack&&!chatConn.checked&&!chatConn.busy){
+    await chatConnect(state.chat.endpoint,{timeout:1500,diagnose:false,silent:true});
+  }
   const input=document.getElementById("chatInput");
   if(!input.disabled)input.focus();
 }
 function closeChatPanel(){
   document.getElementById("chatPanel").hidden=true;
   document.getElementById("chatFab").setAttribute("aria-expanded","false");
+  chatWantModelPick=false;   // reopening goes back to the conversation, not the picker
 }
 function chatClearConversation(){
   state.chat.messages=[];save();renderChatLog();toast("Conversation cleared");
@@ -3523,86 +3749,38 @@ function chatClearConversation(){
    Both documented gotchas apply: scope every querySelectorAll to a [data-chatset] attribute of
    our own, never the shared .theme-opt class (five other pickers use it); and stopPropagation()
    on the endpoint input so typing in it can't be read as a menu-closing outside click. */
-function renderChatModelOptions(models){
-  const sel=document.getElementById("chatModelSelect");
-  if(!sel)return;
-  const cur=state.chat.model;
-  if(!models||!models.length){
-    sel.innerHTML=`<option value="">No models installed — run ollama pull qwen3:4b</option>`;
-    return;
-  }
-  sel.innerHTML=models.map(m=>`<option value="${esc(m)}" ${m===cur?"selected":""}>${esc(m)}</option>`).join("");
-  if(!models.includes(cur)){state.chat.model=models[0];save();setSectionCurrent();}
-}
 function renderChatSettings(){
   const ep=(state.chat&&state.chat.endpoint)||CHAT_ENDPOINT_DEFAULT;
-  const model=(state.chat&&state.chat.model)||"";
+  const cur=(state.chat&&state.chat.model)||"";
+  // Reads chatConn.models, so it survives boot()'s unconditional re-render instead of collapsing
+  // back to a single option the way a locally-held list did.
+  const opts=chatConn.models.length
+    ?chatConn.models.map(m=>`<option value="${esc(m)}"${m===cur?" selected":""}>${esc(m)}</option>`).join("")
+    :`<option value="${esc(cur)}">${cur?esc(cur):"Press Test connection to load models"}</option>`;
   document.getElementById("chatSetItems").innerHTML=`
     <input class="set-input" id="chatEndpointInput" type="text" maxlength="120"
       placeholder="${esc(CHAT_ENDPOINT_DEFAULT)}" autocomplete="off" aria-label="Assistant endpoint"
       value="${esc(ep)}">
-    <button type="button" class="add-row" id="chatTestBtn" style="width:100%;margin-top:0">Test connection</button>
-    <div class="note" id="chatTestResult" style="margin-top:8px"></div>
-    <select class="set-input" id="chatModelSelect" data-chatset="model" aria-label="Assistant model" style="margin-top:8px">
-      ${model?`<option value="${esc(model)}" selected>${esc(model)}</option>`:`<option value="">Press Test connection to load models</option>`}
-    </select>`;
+    <button type="button" class="add-row" id="chatTestBtn" style="width:100%;margin-top:0"${chatConn.busy?" disabled":""}>${chatConn.busy?"Testing…":"Test connection"}</button>
+    <div class="cp-status" id="chatTestResult">${esc(chatStatusText())}</div>
+    <select class="set-input" id="chatModelSelect" data-chatset="model" aria-label="Assistant model" style="margin-top:8px">${opts}</select>`;
 
   const epInput=document.getElementById("chatEndpointInput");
   // typing/clicking here must not reach the global 1-6 tab shortcut or the menu's outside-click closer
   epInput.addEventListener("click",e=>e.stopPropagation());
-  epInput.addEventListener("change",()=>{
-    const v=epInput.value.trim().replace(/\/+$/,"");
-    state.chat.endpoint=CHAT_LOOPBACK.test(v)?v:CHAT_ENDPOINT_DEFAULT;
-    epInput.value=state.chat.endpoint;
-    save();
+  epInput.addEventListener("change",()=>chatSetEndpoint(epInput.value));
+  document.getElementById("chatTestBtn").addEventListener("click",e=>{
+    e.stopPropagation();
+    const v=document.getElementById("chatEndpointInput").value;
+    if(!chatSetEndpoint(v))return;   // badurl is already surfaced by chatSetEndpoint()
+    chatConnect(state.chat.endpoint);
   });
-  document.getElementById("chatTestBtn").addEventListener("click",e=>{e.stopPropagation();chatTest();});
   // scoped to [data-chatset], never the shared .theme-opt class — a broad selector has cleared
   // other pickers' checkmarks before (see renderNameList()/renderGoalList())
   document.querySelectorAll('[data-chatset="model"]').forEach(sel=>{
     sel.addEventListener("click",e=>e.stopPropagation());
-    sel.addEventListener("change",()=>{
-      state.chat.model=sel.value;save();setSectionCurrent();
-    });
+    sel.addEventListener("change",()=>chatSetModel(sel.value));
   });
-}
-let chatSawOk=false;   // Safari caveat: a "down" verdict right after a successful call this
-                       // session is presented as "couldn't tell", not "not running"
-async function chatTest(){
-  const btn=document.getElementById("chatTestBtn"),out=document.getElementById("chatTestResult"),
-    epInput=document.getElementById("chatEndpointInput");
-  const ep=(epInput.value||"").trim().replace(/\/+$/,"");
-  if(!CHAT_LOOPBACK.test(ep)){
-    out.textContent="That doesn't look like a loopback address (127.0.0.1, localhost or [::1]).";
-    return;
-  }
-  const was=btn.textContent;btn.disabled=true;btn.textContent="Testing…";
-  const res=await chatProbe(ep);
-  btn.disabled=false;btn.textContent=was;
-  state.chat.endpoint=ep;save();
-  if(res.kind==="ok"){
-    chatSawOk=true;
-    out.textContent=res.models.length
-      ?("Connected — "+res.models.length+" model"+(res.models.length===1?"":"s")+" installed.")
-      :"Connected, but no models are installed yet. Run: ollama pull qwen3:4b";
-    renderChatModelOptions(res.models);
-    renderChatLog();
-  }else if(res.kind==="cors"){
-    out.textContent="Ollama is running, but it refused this page.";
-    document.getElementById("chatLog").innerHTML=chatGuideHTML("cors");
-  }else if(res.kind==="down"){
-    out.textContent=chatSawOk
-      ?"Couldn't tell this time — the browser console has the exact error."
-      :"Nothing answered at "+ep+".";
-    document.getElementById("chatLog").innerHTML=chatGuideHTML("down");
-  }else if(res.kind==="slow"){
-    out.textContent="Timed out waiting for a response at "+ep+".";
-  }else if(res.kind==="error"){
-    out.textContent="Ollama responded with an error (HTTP "+res.status+").";
-  }else{
-    out.textContent="That doesn't look like a loopback address.";
-  }
-  setSectionCurrent();
 }
 
 function initChat(){
@@ -3616,15 +3794,51 @@ function initChat(){
     if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();chatSend();}
   });
   document.getElementById("chatSend").addEventListener("click",chatSend);
-  // copy buttons in the setup guide — clipboard API can be unavailable on file://, so this is a
-  // silent no-op fallback; the command text is visible and selectable regardless
-  document.getElementById("chatLog").addEventListener("click",e=>{
-    const btn=e.target.closest("[data-copy]");
-    if(!btn)return;
-    if(navigator.clipboard&&navigator.clipboard.writeText){
-      navigator.clipboard.writeText(btn.dataset.copy).then(()=>toast("Copied")).catch(()=>{});
+  // Once connected, the model badge is the only way back to the picker.
+  document.getElementById("cpModelBadge").addEventListener("click",()=>{
+    if(chatStep()!=="chat")return;
+    chatWantModelPick=true;renderChatLog();
+  });
+  // Step cards are rebuilt on every state change, so their controls are handled by delegation
+  // rather than re-bound per render. #chatLog is the only surface they ever live on.
+  const log=document.getElementById("chatLog");
+  log.addEventListener("click",e=>{
+    // copy buttons — the clipboard API can be unavailable on file://, so this is a silent no-op
+    // fallback; the command text is visible and selectable regardless
+    const copyBtn=e.target.closest("[data-copy]");
+    if(copyBtn){
+      if(navigator.clipboard&&navigator.clipboard.writeText){
+        navigator.clipboard.writeText(copyBtn.dataset.copy).then(()=>toast("Copied")).catch(()=>{});
+      }
+      return;
+    }
+    const modelBtn=e.target.closest("[data-chatmodel]");
+    if(modelBtn){
+      chatSetModel(modelBtn.dataset.chatmodel);
+      const i=document.getElementById("chatInput");
+      if(!i.disabled)i.focus();
+      return;
+    }
+    const act=e.target.closest("[data-chatact]");
+    if(!act)return;
+    if(act.dataset.chatact==="ack"){
+      state.chat.ack=true;save();renderChatLog();
+      const next=log.querySelector('[data-chatact="connect"]');
+      if(next)next.focus();
+    }else if(act.dataset.chatact==="connect"){
+      chatConnect(state.chat.endpoint);
     }
   });
+  log.addEventListener("change",e=>{
+    const ep=e.target.closest('[data-chatact="endpoint"]');
+    if(ep)chatSetEndpoint(ep.value);
+  });
+  // `toggle` does not bubble, so this listens in the capture phase. Remembering the open state
+  // keeps "Change address" from snapping shut under the user on the re-render their own edit causes.
+  log.addEventListener("toggle",e=>{
+    const d=e.target.closest&&e.target.closest(".cp-adv");
+    if(d)chatAdvOpen=d.open;
+  },true);
 }
 
 /* ---------- boot ---------- */

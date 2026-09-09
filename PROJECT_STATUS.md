@@ -85,6 +85,23 @@ panel can talk to a local Ollama server. This is worth being precise about:
   injected tracking pixel. `script-src`'s hashes-with-no-`'unsafe-inline'` is what actually kills an
   injection before it can build that tag.
 
+### Two assistant invariants that keep the panel honest
+
+Both exist because the connection UI was originally split across two surfaces and drifted:
+
+- **`renderChatLog()` is the only function permitted to write to `#chatLog`.** The old
+  ⚙ Test-connection handler wrote the setup guide straight into the log, which could erase an
+  un-acknowledged disclaimer card and leave no way back except closing the panel. Everything now
+  routes through the renderer; a step's markup lives in a `chat*CardHTML()` builder, never in a
+  handler.
+- **`chatConn` is deliberately ephemeral** — never persisted, never sanitized. It describes the
+  world outside the browser (is Ollama up, which models exist), not the user's data. A stale
+  "connected" restored from `localStorage` would be worse than no memory at all: the panel would
+  look ready and fail on the first send. `chatStep()` derives the panel's state from it fresh each
+  render, and `chatConnect()` / `chatSetModel()` / `chatSetEndpoint()` are the only three functions
+  that mutate connection state — both the panel and the ⚙ section call them rather than carrying
+  their own copies.
+
 ### The TradingView widget is sandboxed — never add `allow-same-origin`
 
 `ensureTradingViewWidget()` puts the third-party loader inside a `srcdoc` iframe with
@@ -272,9 +289,36 @@ so a same-morning refresh legitimately returns the prior business day.
 - FX fetch is **deliberately not gated by `state.autoRefresh`** — unlike opt-in Treasury/CPI data, currency is an explicit user selection, and a missing rate would silently mislabel USD figures as ¥/€. It fetches once a day whenever a non-USD currency is active, falls back to the last cached rate, and marks the picker `(est.)` when no rate was ever fetched.
 
 **Settings menu (⚙)**
-- Six collapsible sections (`.set-sec` / `.set-head` / `.set-body`): Theme, Auto-refresh, 語 Language, € Currency, ◎ Tracking, ✎ Your name — plus a **Reset all data** button below them. The reset is deliberately *not* a `.set-sec`: `openSetSection()` treats every `.set-head` as an accordion panel, and a one-shot destructive action is not a picker. **Accordion — one open at a time** (`openSetSection()`), all collapsed on every open, with the active value shown in each collapsed header (`setSectionCurrent()`). Wired once by `initSettingsSections()`.
+- Seven collapsible sections (`.set-sec` / `.set-head` / `.set-body`): Theme, Auto-refresh, 語 Language, € Currency, ◎ Tracking, ✎ Your name, ✦ Assistant — plus a **Reset all data** button below them. The reset is deliberately *not* a `.set-sec`: `openSetSection()` treats every `.set-head` as an accordion panel, and a one-shot destructive action is not a picker. **Accordion — one open at a time** (`openSetSection()`), all collapsed on every open, with the active value shown in each collapsed header (`setSectionCurrent()`). Wired once by `initSettingsSections()`.
 - `.theme-list` has `max-height` + `overflow-y:auto` + **`overscroll-behavior:contain`** — that last property is what stops scrolling the menu from chaining to the page behind it.
-- **Scope picker selectors to their `data-` attribute, never `.theme-opt`.** That class is now shared by all six pickers (`[data-theme]`, `[data-auto]`, `[data-lang]`, `[data-cur]`, `[data-goal]`, `[data-namecolor]`). `renderThemeList()` used the broad selector and cleared `aria-current` on Language/Currency/Auto-refresh every time a theme was picked — fixed by scoping to `[data-theme]` (5 elements). The other three already scoped correctly.
+- **Scope picker selectors to their `data-` attribute, never `.theme-opt`.** That class is now shared by all six theme-styled pickers (`[data-theme]`, `[data-auto]`, `[data-lang]`, `[data-cur]`, `[data-goal]`, `[data-namecolor]`); the Assistant section's model `<select>` uses `[data-chatset]` for the same reason. `renderThemeList()` used the broad selector and cleared `aria-current` on Language/Currency/Auto-refresh every time a theme was picked — fixed by scoping to `[data-theme]` (5 elements). The other three already scoped correctly.
+
+**✦ Assistant — in-panel connection onboarding**
+- The panel is a four-step machine derived fresh on every render by `chatStep()`: **ack** (one-time
+  disclaimer) → **connect** → **model** → **chat**. The composer is enabled only in `chat`. Every
+  step except `ack` renders *below* the transcript, so losing the connection mid-conversation doesn't
+  read as the conversation being wiped; `ack` takes the log over completely, because an imported
+  backup can carry `ack:false` alongside messages.
+- **Setup lives in the panel, not in ⚙.** The connect step leads with one **Connect** button and
+  states plainly that Ollama needs no API key, no account and no sign-up — the endpoint field is
+  collapsed behind a "Change address" disclosure, since the default is right for almost everyone and
+  a URL box is the wrong first thing to show someone who has never run Ollama. A failed attempt
+  swaps the button to **Try again** and inlines `chatGuideHTML()` right there, so the instructions
+  and the button that retries them are in the same place. Previously the guide rendered in the chat
+  log while the only control that could produce it sat in a collapsed ⚙ accordion — a dead end.
+- The header model badge (`#cpModelBadge`) is a **button** — once connected it is the only route
+  back to the picker (`chatWantModelPick`).
+- **`chatStep()` treats a saved model that is no longer installed as "pick again"**, with a line
+  saying so, rather than silently reassigning to `models[0]` the way the old settings-only path did.
+- A send failure routes by shape (`chatFailKind()`): a 404/"not found" means Ollama is reachable and
+  the model is gone → back to the **model** step; no HTTP status at all means the connection died →
+  back to **connect**; anything else is a real error from a reachable Ollama and stays an inline
+  bubble. The failed message stays in the transcript either way.
+- **Panel open runs one silent probe per page load** (`chatConn.checked`), at a 1.5s timeout with
+  `diagnose:false` — a stored model says nothing about whether Ollama is running *now*, and the
+  cheap check is what stops the composer looking ready and then failing on send. It paints first and
+  probes second, so the panel never blocks on the network. The full cors-vs-down diagnosis (the
+  second `no-cors` leg) is only paid for when the user presses Connect.
 
 **Cross-cutting**
 - 5 themes via CSS custom properties (Terminal default + 4 Catppuccin variants), live chart re-theming on switch (`THEMES` / `applyTheme()`). Every theme also defines `--cyan` for the brand-name colour — Terminal is literally `#00FFFF`, Latte uses Catppuccin Teal because pure cyan scores 1.11 contrast on its light topbar
