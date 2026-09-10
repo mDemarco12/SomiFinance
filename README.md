@@ -3,7 +3,7 @@
 
 A personal net-worth and macro-signals dashboard that runs entirely in your browser — no install, no account, no server. Open the HTML file and your data stays on your machine.
 
-<img width="665" height="598" alt="Screenshot 2026-09-07 at 11 36 21" src="https://github.com/user-attachments/assets/39cb60d7-c2e1-4ef4-895b-07cd305d4bb1" />
+<img width="1780" height="912" alt="Screenshot 2026-09-09 at 22 23 38" src="https://github.com/user-attachments/assets/622d4647-e110-474b-8de1-d9158e2c5500" />
 
 ## What it does
 
@@ -74,7 +74,7 @@ SomiFinance is a single-page dashboard for tracking your net worth alongside the
 - Keyboard shortcuts (`1`–`6` to switch tabs, `Esc` to close menus)
 - Layout that follows your window — the shell, tiles and type scale up on a large monitor and collapse to a single column on a small one
 - Reset your instance to Factory Specs with an integrated Reset button within the settings (and you have the option to back-up your data, and you must type 'Yes' before the reset)
-- 
+  
 <img width="665" height="598" alt="Screenshot 2026-09-07 at 11 34 42" src="https://github.com/user-attachments/assets/c783c2af-1bd0-4c39-b9b5-d5f0d374a98d" />
 
 
