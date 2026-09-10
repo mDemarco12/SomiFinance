@@ -52,7 +52,7 @@ SomiFinance is a single-page dashboard for tracking your net worth alongside the
 - A chat panel that reads a summary of your figures and answers questions about them in plain English — "how am I doing against my goals?", "where is most of my spending going?"
 - **Runs entirely on your own machine** via [Ollama](https://ollama.com), a free app you install separately. **No API key, no account, no sign-up** — and nothing you type is sent anywhere off your computer
 - Setup happens in the panel itself: open ✦, press **Connect**, then pick from whichever models you have installed. If it can't reach Ollama, it tells you exactly why and shows the fix inline
-- **New to this?** Step-by-step guides written for non-technical users, from installing Ollama to your first question: **[macOS & Ubuntu](ASSISTANT-SETUP.md)** · **[Windows](ASSISTANT-SETUP-WINDOWS.md)**
+- **New to this?** Step-by-step guides written for non-technical users, from installing Ollama to your first question: **[macOS & Ubuntu](ASSISTANT-SETUP.md)** · **[Windows](ASSISTANT-SETUP-WINDOWS.md)**. The guides install `qwen3.5:4b` (3.4 GB, Apache-2.0); **[Choosing a model](MODELS.md)** covers picking a different one to suit your machine
 - **Read-only.** It can't change a single figure in your ledger. It receives category-level totals only — individual holding names and your free-text notes are never sent
 - It's a small local model: it can be confidently wrong, and nothing it says is financial advice. The panel says so, permanently
 
@@ -86,7 +86,7 @@ Want to see it with data in it first? `SomiFinanceDemo.html` is the same app car
 
 Your data is saved automatically to that browser's local storage. Use **Export** regularly to back it up as a JSON file — that backup is also how you'd move your data to a new browser or machine (**Import** it there).
 
-**Want the ✦ AI assistant too?** That's the one part with a setup step, because it needs Ollama installed on your machine. Full walkthroughs, written for people who don't consider themselves technical: **[macOS & Ubuntu](ASSISTANT-SETUP.md)** · **[Windows](ASSISTANT-SETUP-WINDOWS.md)**. Everything else in SomiFinance works without it.
+**Want the ✦ AI assistant too?** That's the one part with a setup step, because it needs Ollama installed on your machine. Full walkthroughs, written for people who don't consider themselves technical: **[macOS & Ubuntu](ASSISTANT-SETUP.md)** · **[Windows](ASSISTANT-SETUP-WINDOWS.md)**. Once it's running, **[Choosing a model](MODELS.md)** helps you pick the right model for your hardware. Everything else in SomiFinance works without it.
 
 ## Data & privacy
 

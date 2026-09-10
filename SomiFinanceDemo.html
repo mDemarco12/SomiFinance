@@ -27,7 +27,7 @@
 -->
 <meta http-equiv="Content-Security-Policy" content="
   default-src 'none';
-  script-src 'sha256-LEfI6wtiATeJWC0ehfYamH0fHWvD5leT9b99SJsRVXU=' 'sha256-JoAFmsof8SeGz3HGmMUv/XrHtqPtxU5ZHezPMoRWpps=' https://s3.tradingview.com;
+  script-src 'sha256-LEfI6wtiATeJWC0ehfYamH0fHWvD5leT9b99SJsRVXU=' 'sha256-J6vJ6hc46s4vDBfBJG+Y+iv7MeWLbxW2cM3IJjwfLJM=' https://s3.tradingview.com;
   style-src 'unsafe-inline';
   img-src data: https:;
   connect-src https://home.treasury.gov https://api.bls.gov https://open.er-api.com http://127.0.0.1:* http://localhost:*;
@@ -3273,6 +3273,8 @@ function chatBody(messages,model){
   // Qwen3 / DeepSeek-R1 / gpt-oss emit a reasoning block that would stream into the bubble as
   // visible <think> noise. Only sent for models that support the flag — some builds 400 on it,
   // so chatSend() retries once without it.
+  // "qwen3" also covers the qwen3.5 default (CHAT_DEFAULT_MODEL) by substring — deliberate, not
+  // luck. Don't tighten this alternative to a word boundary without re-checking that default.
   if(/qwen3|deepseek-r1|magistral|gpt-oss|thinking/i.test(model))b.think=false;
   return b;
 }
@@ -3473,14 +3475,27 @@ async function chatProbe(ep,{timeout=4000,diagnose=true}={}){
    exact value and takes Ollama down at startup. "nul*" (which contains a "*", so it passes
    validation) matches that Origin by prefix without allowing every website the user visits the
    way a bare "*" would. */
-// Shown right after the default `ollama pull qwen3:4b` line in both reachable branches below.
-// qwen3:4b stays the default (Apache-2.0, ~2.5GB, strong instruction-following at 4B); these are
-// named alternatives, not a competing recommendation.
-const MODEL_ALT_HTML=`<p class="note" style="margin:4px 0 0">Prefer a different model? <b>gemma3:4b</b>
-      is lighter on RAM (~3.3GB on disk, ~4.2GB resident at an 8k context) but ships under the
-      <b>Gemma Terms</b> license, not Apache-2.0 — read them before redistributing anything built on
-      it. <b>qwen3:8b</b> gives noticeably better answers than the 4B default if you have roughly 8GB
-      of free RAM to spare; same license and <code>think:false</code> handling as qwen3:4b.</p>`;
+// The one place the recommended model is named. Apache-2.0, 3.4GB on disk, thinking-capable — see
+// the think:false note at the top of chatSend() for why that last part matters.
+const CHAT_DEFAULT_MODEL="qwen3.5:4b";
+// The generic form teaches the shape of the command; the concrete line under it is what the Copy
+// button carries, because "<modelName:parameterSize>" pasted into a terminal is an error, not a
+// command. Shared by all four places the panel asks the user to install a model — keeping them in
+// one constant is what stops the panel and the setup guides drifting apart.
+const PULL_HTML=`<pre>ollama pull &lt;modelName:parameterSize&gt;</pre>
+      <p class="cp-status">Any model from <a href="https://ollama.com/search" target="_blank"
+      rel="noopener noreferrer">ollama.com/search ↗</a> works. If you're not sure, use the
+      recommended default:</p>
+      <pre>ollama pull ${CHAT_DEFAULT_MODEL}</pre>
+      <button type="button" class="cp-copy" data-copy="ollama pull ${CHAT_DEFAULT_MODEL}">Copy</button>`;
+// Shown right after PULL_HTML in both reachable branches below. qwen3.5:4b stays the default;
+// these are named alternatives, not a competing recommendation.
+const MODEL_ALT_HTML=`<p class="note" style="margin:4px 0 0">Prefer a different model?
+      <b>qwen3.5:2b</b> is lighter on RAM (2.7GB on disk) if 4B is a squeeze, and <b>qwen3.5:9b</b>
+      (6.6GB) gives noticeably better answers on a 16GB machine — same Apache-2.0
+      license and same <code>think:false</code> handling as the default. <b>gemma3:4b</b> is another
+      option at a similar size, but it ships under the <b>Gemma Terms</b> license, not Apache-2.0 —
+      read them before redistributing anything built on it.</p>`;
 function chatGuideHTML(kind,status){
   const lead=kind==="cors"
     ?"<p><b>Ollama is running, but it refused this page.</b> That's a CORS setting, and it's fixable below.</p>"
@@ -3498,9 +3513,8 @@ function chatGuideHTML(kind,status){
     branch=`<h4>Opening this file directly</h4>
       <p>Ollama's default settings don't recognize the origin a locally-opened file sends
       (the browser reports it as <code>Origin: null</code>), so out of the box the assistant can't
-      connect. First, install a model if you haven't:</p>
-      <pre>ollama pull qwen3:4b</pre>
-      <button type="button" class="cp-copy" data-copy="ollama pull qwen3:4b">Copy</button>
+      connect. First, install a model if you haven't — the command takes the form:</p>
+      ${PULL_HTML}
       ${MODEL_ALT_HTML}
       <p><b>Option 1 — tell Ollama to allow this page</b> (macOS shown; Linux/Windows: set the same
       environment variable for the Ollama service, then restart it):</p>
@@ -3521,10 +3535,9 @@ function chatGuideHTML(kind,status){
       press Test connection again.</p>`;
   }else if(CHAT_LOOPBACK.test(location.origin)){
     branch=`<h4>Good news</h4>
-      <p>Ollama already allows this page's origin by default — just install a model and press
-      Test connection.</p>
-      <pre>ollama pull qwen3:4b</pre>
-      <button type="button" class="cp-copy" data-copy="ollama pull qwen3:4b">Copy</button>
+      <p>Ollama already allows this page's origin by default — install a model and press Test
+      connection. The command takes the form:</p>
+      ${PULL_HTML}
       ${MODEL_ALT_HTML}`;
   }else{
     branch=`<h4>This page isn't on your own machine</h4>
@@ -3609,9 +3622,9 @@ function chatConnectCardHTML(){
     rel="noopener noreferrer">Ollama ↗</a>, a free app that runs AI models locally.
     <b>There's no API key, no account and no sign-up</b> — and nothing you type here ever leaves
     your machine.</p>
-    <p>Don't have it yet? Install Ollama, then run this in a terminal:</p>
-    <pre>ollama pull qwen3:4b</pre>
-    <button type="button" class="cp-copy" data-copy="ollama pull qwen3:4b">Copy</button>
+    <p>Don't have it yet? Install Ollama, then pull a model in a terminal. The command takes the
+    form:</p>
+    ${PULL_HTML}
     <button type="button" class="cp-primary" data-chatact="connect"${chatConn.busy?" disabled":""}>${label}</button>
     ${failed?`<p class="cp-status bad">${esc(chatStatusText())}</p>`+chatGuideHTML(chatConn.kind,chatConn.status):""}
     ${chatAdvHTML()}</div>`;
@@ -3622,9 +3635,9 @@ function chatModelCardHTML(){
   if(!models.length){
     return `<div class="cp-step">
       <h4>No models installed</h4>
-      <p>Ollama is running, but it doesn't have any models yet. Install the recommended one:</p>
-      <pre>ollama pull qwen3:4b</pre>
-      <button type="button" class="cp-copy" data-copy="ollama pull qwen3:4b">Copy</button>
+      <p>Ollama is running, but it doesn't have any models yet. Pull one — the command takes the
+      form:</p>
+      ${PULL_HTML}
       ${MODEL_ALT_HTML}
       ${again}${chatAdvHTML()}</div>`;
   }
