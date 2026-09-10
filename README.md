@@ -3,7 +3,7 @@
 
 A personal net-worth and macro-signals dashboard that runs entirely in your browser — no install, no account, no server. Open the HTML file and your data stays on your machine.
 
-<img width="1780" height="912" alt="Screenshot 2026-09-09 at 22 23 38" src="https://github.com/user-attachments/assets/622d4647-e110-474b-8de1-d9158e2c5500" />
+<img width="665" height="598" alt="647408229-39cb60d7-c2e1-4ef4-895b-07cd305d4bb1" src="https://github.com/user-attachments/assets/3f49ba84-71ee-4ad5-8aad-14d003bf6da1" />
 
 ## What it does
 
@@ -15,7 +15,7 @@ SomiFinance is a single-page dashboard for tracking your net worth alongside the
 - Allocation breakdown by category
 - Net worth history chart, built from the snapshots you log over time
 
-<img width="1696" height="766" alt="screenshot" src="https://github.com/user-attachments/assets/f48da16b-36d6-4868-988d-7459fc95c94c" />
+<img width="1780" height="912" alt="Screenshot 2026-09-09 at 22 23 38" src="https://github.com/user-attachments/assets/622d4647-e110-474b-8de1-d9158e2c5500" />
 
 ### Assets & Liabilities ledger
 - Fully editable tables — click any cell to update it
