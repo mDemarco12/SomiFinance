@@ -398,6 +398,8 @@ a setting at all.
 - **It cannot change anything.** The assistant can read and suggest; it can't edit a single figure.
 - **Your conversation is saved in your browser**, alongside the rest of your SomiFinance data, and
   is included in Export files. Clear it any time with the **⌫** button at the top of the panel.
+  It is **never** written into a Quarterly archive file — archives hold your financial figures
+  only, not the assistant conversation.
 
 ---
 

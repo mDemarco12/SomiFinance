@@ -2,7 +2,7 @@
 
 > **Maintenance rule:** this doc is scanned by agents working on this project. Track it with `Scan count` below — increment it by 1 every time this doc is read for context. **On every 4th scan** (count reaches a multiple of 4), lint the whole doc against the current state of `SomiFinanceDemo.html` before doing anything else: move shipped items out of "Could be done," delete resolved "Needs polish" / "Rebrand to-do" items, add anything newly true. Don't let this drift from the actual code.
 >
-> **Scan count:** 5 (full doc lint against the code — goal-aware categories, reset, name colour, fluid sizing, TradingView re-theme fix; previously: three-build split — `build.py`, per-build storage keys, empty-ledger end-user build; previously: security pass — CSP, sandboxed TradingView frame, `sanitizeState()`, genericized seed, history purge; see **Security posture** below)
+> **Scan count:** 6 (quarterly archive — encrypted append-only audit record, see **Security posture** and **Done**; previously: full doc lint against the code — goal-aware categories, reset, name colour, fluid sizing, TradingView re-theme fix; previously: three-build split — `build.py`, per-build storage keys, empty-ledger end-user build; previously: security pass — CSP, sandboxed TradingView frame, `sanitizeState()`, genericized seed, history purge; see **Security posture** below)
 >
 > **Anchor style:** reference code by **symbol name** (`renderBudget()`, `#tvBox`, `THEMES`) — never by line number. A previous version used `file#L123` links and all 26 went stale the moment Chart.js was inlined. Symbol names stay greppable across edits.
 
@@ -10,7 +10,7 @@
 
 - **What it is:** a single-file, offline-first personal net-worth & macro dashboard. Vanilla HTML/CSS/JS, no bundler, no backend. Persists to `localStorage`. There is one build step, and it is not a compiler: `build.py` projects the source into the other two builds (see **Three builds** below). Every output is still a standalone single file that runs by double-clicking it.
 - **Genuinely offline on load.** Chart.js v4.4.1 is **inlined** into the file (~205 KB minified, 13 lines, MIT banner preserved, `sourceMappingURL` stripped) — no CDN tag, and the page's own two script blocks are both inline. Opening the page fires **zero** network requests **by default** (auto-refresh ships `off` — see Macro Signals). Only three things ever reach out, all user-triggered: the TradingView widget on first Economic Calendar view, the Treasury/BLS fetches on Refresh from Macro Signals, and the FX-rate fetch when a non-USD currency is selected. The single remaining third-party `script src` is TradingView's, and it lives inside the sandboxed frame's `srcdoc`, never in this document — see **Security posture**. Don't "optimize" Chart.js back to a CDN — inlining is deliberate (it also removes an unpinned-CDN supply-chain path, since the old tag had no SRI hash).
-- **File:** `SomiFinanceDemo.html` (~2820 lines / ~360 KB, one file — markup, styles, and script all inline; ~200 KB of that is the inlined Chart.js, so hand-written code is ~107 KB).
+- **File:** `SomiFinanceDemo.html` (~4540 lines / ~455 KB, one file — markup, styles, and script all inline; ~200 KB of that is the inlined Chart.js, so hand-written code is ~255 KB). The quarterly archive added ~550 lines.
 - **Three builds, one source.** `SomiFinanceDemo.html` is the **only file anyone edits**. `build.py` projects it into the other two. Never hand-edit a generated file — it carries a DO-NOT-EDIT banner and the next build silently overwrites it.
 
   | File | What it is | Git |
@@ -80,7 +80,8 @@ panel can talk to a local Ollama server. This is worth being precise about:
 - Model output is written with `bubble.textContent`, never `innerHTML` — the same XSS-dead-on-
   arrival property the CSP gives the rest of the app extends to whatever a local model streams back.
 - The chat transcript persists in `state.chat.messages` (capped at 40 messages / 2000 chars each)
-  and rides along in every Export, exactly like every other field — see **Key facts** below.
+  and rides along in every Export, exactly like every other field — see **Key facts** below. It is
+  **never** sealed into a quarterly archive: `archivePayload()` whitelists the financial record only.
 - `connect-src` was never the only exfil channel — `img-src data: https:` has always permitted an
   injected tracking pixel. `script-src`'s hashes-with-no-`'unsafe-inline'` is what actually kills an
   injection before it can build that tag.
@@ -125,6 +126,44 @@ Because the widget now lives in a frame, TradingView's `height:100%` clobber lan
 *its* document, not on `#tvBox`. The `#tvBox{…!important}` rule is therefore belt-and-braces now
 rather than load-bearing — but keep it, and keep `setLiveCalPx()` as the sole writer of
 `--live-cal-h`. Never set `tvBox.style.height` directly.
+
+### The quarterly archive — an audit record, not a backup; the passphrase is the only secret
+
+⚙ → **⧉ Quarterly archive** writes a `.somiq` file: a cleartext JSON envelope around AES-256-GCM
+entries, one per archived quarter. Everything lives in the `/* ---------- quarterly archive */`
+block beside `exportJSON()`. Five things here are load-bearing:
+
+- **It is not a backup, structurally.** `archivePayload()` is an explicit *whitelist* of the
+  financial record (ledger, budget, goals, history, yields, inflation, calendar, profile name/goal,
+  plus a fixed `currency:"USD"` unit marker). Theme, language, currency preference, FX, onboarding
+  flags and `chat` are omitted, so a file cannot restore an install even by hand, and there is no
+  Restore or per-quarter re-export anywhere. **Don't add one** — an archive that can be restored is
+  a backup, and one that can be edited then restored is worse than no archive. `⭳ Export` /
+  `⭱ Import` stay the only backup path, and every archive surface says so.
+- **`KEY` is not a secret.** The cipher key is `PBKDF2-SHA256(passphrase, randomSalt || KEY)`.
+  `KEY` is plaintext in this HTML, so it contributes *build binding* (a demo archive won't open in
+  the personal build) and nothing else. The passphrase is never persisted anywhere; lose it and the
+  archive is unreadable, and the dialog says so before the first write. `iterations` lives in each
+  file and loaders read the file's value, clamped to `ARCHIVE_ITER_MIN`/`MAX` so a crafted header can
+  neither demand a weak key nor hang the tab.
+- **Metadata is authenticated, not just stored.** `id|quarter|takenAt|prev` is GCM
+  `additionalData`, so re-dating or relabelling an entry fails the tag exactly like editing the
+  payload. `prev` is `sha256(previous ct)` — a hash chain, so a deleted, inserted or reordered
+  entry shows as a break at that row. Dropping the *newest* entries can't break a chain; the local
+  anchor `state.archive.head` catches that, but only in the browser that wrote them.
+- **`archiveSession` is ephemeral, exactly like `chatConn`.** Decrypted entries and the
+  (non-extractable) `CryptoKey` live only there — never in `state`, never in `localStorage`, gone on
+  reload or *Close archive*. `state.archive` holds bookkeeping only: `{lastQuarter,lastAt,salt,head,count}`,
+  all public values, sanitized field by field.
+- **No plaintext fallback.** `cryptoOK()` gates everything; if `crypto.subtle` is missing (it is
+  secure-context-only) the ⚙ section explains and offers no buttons. Verified present on `file://`
+  in Chrome, Firefox and WebKit, and files written in each open in the other two.
+
+Decrypted records still go through `sanitizeState()` for caps and coercion, after a shape check —
+`sanitizeState()` fills missing fields from `seed()`, and an archive must never display a figure
+it didn't carry. Every archived string renders outside `cellInput()`, so every one is `esc()`'d.
+`showArchiveDialog()`'s Escape handler is named `onEsc`, not `esc`: `showResetConfirm()`'s is
+called `esc`, which shadows the global escaper for that whole function body.
 
 ### `sanitizeState()` is the only door into `state`
 
@@ -255,15 +294,27 @@ so a same-morning refresh legitimately returns the prior business day.
 - **`CAT_META` carries the meaning, so no function name-matches a category.** `group` (`cash` / `invested`) drives the Overview tiles and the tape; `liquid` drives the allocation panel's cash+brokerage readout. **Invariant: every goal's asset list needs at least one `cash` and one `invested` category**, or those tiles read $0 on a full ledger — that is why the business set carries "Reserves / investments". Verified at the time of the change that the refactor reproduced the old figures exactly.
 - `businessBudget()` is the business row template. It lives **outside** the `@variant:begin seedBudget` block on purpose: `build.py` rewrites that block per build, and this must survive all three. Amounts are 0 because its only caller is onboarding.
 
+**Quarterly archive**
+- ⚙ → **⧉ Quarterly archive** (`renderArchiveList()`): *Start a new archive* / *Open an archive…*, and once one is open, *Archive a quarter* / *Close archive*. The collapsed header is the nudge (`renderArchiveCurrent()`, called from `setSectionCurrent()`): `Not started`, `Q2 26 archived`, or `Q2 26 not archived` — the quarter that's *due* is the one that just closed.
+- **Rolling, append-only file.** Browsers can't overwrite a file, so each archive action downloads the whole file with the new entry appended (`somifinance-archive-<quarter>.somiq`) and the user keeps it in place of the old copy. Re-archiving a quarter appends a newer entry and marks the older one *superseded*; nothing is ever removed. Appending onto a file that failed verification is refused — it would seal the damage into the history.
+- **Read-only viewer on Overview** (`#archPanel`, `renderArchive()`, called at the tail of `renderOverview()`): hidden until an archive is open; one row per entry with the quarter in a red `.q-badge`, date archived, net worth / assets / liabilities, and status (`✓ verified`, `⚠ modified — can't be opened`, `⚠ chain broken here`, `superseded`). Click or Enter expands a row into its archived ledger, budget and goals. No control in the panel writes anything.
+- **Two quarter forms, kept apart.** Stored: `2026-Q3` (`quarterOf()`, sortable, century-proof). Displayed: `Q3 26` (`quarterLabel()`), standard finance shorthand. Never store the display form.
+- **Archived figures render in USD** via `fmtUSD()`, not `fmt()` — `fmt()` would convert at *today's* FX rate and quietly rewrite a historical record. The panel note says so.
+- **The badge is red on purpose, and deliberately reuses `--down`** — the one place in the app where `--down` does not mean "loss". Reusing the token keeps it legible in every theme; measured badge-on-panel contrast is 4.50 (Terminal) to 7.08 (Mocha), 4.80 on Latte.
+- The table has `min-width:680px` inside an `overflow-x:auto` wrapper; without it a phone-width table wraps dates across two lines and clips the expanded row's figures.
+- QA: an end-to-end Playwright suite over `file://` (78 checks — tamper cases, build binding, whitelist, XSS file names, theme contrast, regressions) passed in Chrome, with Firefox and WebKit round-trip smoke tests and cross-engine file compatibility.
+
 **Reset all data**
 - ⚙ → **Reset all data** opens `showResetConfirm()`, which reuses the first-run overlay (`.intro-wipe.hold` + `.welcome`) in `--down` rather than the accent, so a destructive dialog never wears the friendly colour. It names what will go, states there is no server copy to recover from, offers an **Export a backup first** button wired straight to `exportJSON()`, and gates the confirm button behind typing `RESET_PHRASE` exactly.
 - **The phrase is case-sensitive on purpose** (trimmed, but `yes`/`YES` are rejected). A case-insensitive match makes the gesture reflexive, which is the one thing a destructive confirm must not be.
 - Confirm calls `clearStoredData()` then `location.reload()` — see **Security posture** for why both keys go, and why a reload rather than an in-place re-init.
+- Reset clears `state.archive` bookkeeping with everything else; archive *files* live outside the browser and are untouched. The dialog's *Export a backup first* button stays pointed at `exportJSON()` and must never offer archiving instead.
 - **Per-build behaviour differs, correctly.** Reset restores each build's own `seed()`, and only the end-user build seeds `onboarded:false`. So the end-user build returns to the welcome screen, while the demo and personal builds restore their own baseline dataset — which is what a reset should do in those files. Falls out of the variant seeds; no special-casing.
 
 **Brand name colour**
 - The name beside "SomiFinance" (`#brandWho`) is cyan, not grey. `--cyan` is a **theme token** defined in `:root` and all five themes: Terminal is literally `#00FFFF` (the default theme, so the default install), the Catppuccin darks use their own Sky, and Latte uses Teal `#179299` — pure cyan scores **1.11 contrast** on Latte's near-white topbar, i.e. invisible.
 - `NAME_COLORS` offers four choices — Cyan, Accent (`--amber`), Green (`--up`), Blue (`--blue`) — stored in `profile.nameColor` as the **token name**, so `applyGreeting()` writes an inline `var(--token)` and `applyTheme()` recolours it for free on every theme switch. `sanitizeState()` `sPick`s it, so a tampered value falls back to cyan rather than emitting `var(--evil)`.
+- **Second deliberate colour exception, elsewhere:** the quarterly archive's `.q-badge` uses `--down` as a period marker, not a loss — see *Quarterly archive*.
 - **Known, deliberate exception:** Green measures 2.96 contrast on Latte against a 3.0 threshold for large bold text. Kept because 3.0 is a rounded heuristic and this is Catppuccin's own green on its own base; the alternatives are worse (Violet 2.81, Peach 2.64) and the only token clearing 3.0 everywhere is `--down`, which means "loss" throughout the app. Swap to Rose if strict compliance is ever wanted.
 - The same ⚙ section carries a **rename field** — before it, the name was write-once at onboarding and a typo was fixable only by a full reset.
 
@@ -289,7 +340,7 @@ so a same-morning refresh legitimately returns the prior business day.
 - FX fetch is **deliberately not gated by `state.autoRefresh`** — unlike opt-in Treasury/CPI data, currency is an explicit user selection, and a missing rate would silently mislabel USD figures as ¥/€. It fetches once a day whenever a non-USD currency is active, falls back to the last cached rate, and marks the picker `(est.)` when no rate was ever fetched.
 
 **Settings menu (⚙)**
-- Seven collapsible sections (`.set-sec` / `.set-head` / `.set-body`): Theme, Auto-refresh, 語 Language, € Currency, ◎ Tracking, ✎ Your name, ✦ Assistant — plus a **Reset all data** button below them. The reset is deliberately *not* a `.set-sec`: `openSetSection()` treats every `.set-head` as an accordion panel, and a one-shot destructive action is not a picker. **Accordion — one open at a time** (`openSetSection()`), all collapsed on every open, with the active value shown in each collapsed header (`setSectionCurrent()`). Wired once by `initSettingsSections()`.
+- Eight collapsible sections (`.set-sec` / `.set-head` / `.set-body`): Theme, Auto-refresh, 語 Language, € Currency, ◎ Tracking, ✎ Your name, ✦ Assistant, ⧉ Quarterly archive — plus a **Reset all data** button below them. The reset is deliberately *not* a `.set-sec`: `openSetSection()` treats every `.set-head` as an accordion panel, and a one-shot destructive action is not a picker. **Accordion — one open at a time** (`openSetSection()`), all collapsed on every open, with the active value shown in each collapsed header (`setSectionCurrent()`). Wired once by `initSettingsSections()`.
 - `.theme-list` has `max-height` + `overflow-y:auto` + **`overscroll-behavior:contain`** — that last property is what stops scrolling the menu from chaining to the page behind it.
 - **Scope picker selectors to their `data-` attribute, never `.theme-opt`.** That class is now shared by all six theme-styled pickers (`[data-theme]`, `[data-auto]`, `[data-lang]`, `[data-cur]`, `[data-goal]`, `[data-namecolor]`); the Assistant section's model `<select>` uses `[data-chatset]` for the same reason. `renderThemeList()` used the broad selector and cleared `aria-current` on Language/Currency/Auto-refresh every time a theme was picked — fixed by scoping to `[data-theme]` (5 elements). The other three already scoped correctly.
 
@@ -336,12 +387,13 @@ so a same-morning refresh legitimately returns the prior business day.
 ## Could be done
 
 - Live market price feeds for **assets** (brokerage holdings, etc.) — still manual entry. (Treasury yields, CPI, and a reference economic calendar are now live-pulled — see Macro Signals / Economic Calendar above.)
-- Per-asset value history — only net-worth *totals* are snapshotted, not individual holdings over time
-- Budget **history** — the Budgeting tab models a single current month; there's no month-over-month tracking or actual-vs-budget over time (net worth has `history[]`, budget has no equivalent). Natural next step if budgeting gets used seriously.
+- Per-asset value history — only net-worth *totals* are snapshotted continuously. The quarterly archive now records every holding once per quarter; anything finer-grained is still open
+- Budget **history** — the Budgeting tab models a single current month. The quarterly archive seals the budget once per quarter, but there's still no month-over-month tracking or actual-vs-budget over time (net worth has `history[]`, budget has no equivalent). Natural next step if budgeting gets used seriously.
 - Transaction-level tracking / bank import — budgeting is category-level and hand-entered by design
 - CSV export (JSON only today)
 - Column sort/search/filter in ledger tables (calendar auto-sorts by date; ledger does not)
-- Recurring/scheduled automatic snapshots (currently manual "Refresh" click only)
+- Recurring/scheduled automatic snapshots (currently manual "Refresh" click only). Automatic quarter-end *archiving* is deliberately not planned — the ⚙ header nudge is the prompt; an offline single-file app shouldn't write files in the background
+- Chart overlay of archived quarters on the Overview net-worth chart — scoped in the archive plan and not built; archive dates don't align with snapshot labels on the category axis
 - PWA install support (manifest + service worker) — would also make the "offline" claim fully true on first load
 - State-schema *versioning* (the storage key is suffixed `.v1` and `sanitizeState()` now coerces any shape to the current one, but there's no explicit version field or migration ladder)
 - Cloud sync / accounts — explicitly out of scope today; footer says "your pipeline can write the same JSON shape... and you re-Import it"
@@ -350,14 +402,16 @@ so a same-morning refresh legitimately returns the prior business day.
 
 ## Needs polish
 
+- **The topbar overflows at phone width** — at 400px the Refresh / Export / Import / ⚙ buttons run 270px past the viewport, so the whole page scrolls sideways. Pre-existing (identical on `main` before the archive landed), found during archive QA
 - No favicon, no OG tags (a `<meta name="description">` was added with the CSP)
 - Onboarding copy is English-only, so a zh-Hant/zh-Hans user still gets an English first run. Now broader than it was: the welcome screen, all hint bodies (four goals × five steps), the reset confirm dialog, and the two newest ⚙ sections are all untranslated. Consistent with the "chrome only" i18n scope, but it's the one place that inconsistency is most likely to be noticed.
-- Monolithic single file (~360 KB, ~2820 lines) — ~200 KB of that is inlined Chart.js, so hand-written code is ~107 KB. Fine for personal use; worth a deliberate decision (keep as a distribution feature vs. split into modules) once this becomes a shipped product
+- Monolithic single file (~455 KB, ~4540 lines) — ~200 KB of that is inlined Chart.js, so hand-written code is ~255 KB. Fine for personal use; worth a deliberate decision (keep as a distribution feature vs. split into modules) once this becomes a shipped product
 
 ## Key facts for future me
 
 - Everything lives in one `<script>` block at the bottom of the file.
-- State object shape: `{ updated, onboarded, hintsDone, profile{name,goal,nameColor}, theme, lang, currency, fx{rates{},lastFetch}, calendarOrder[], liveCalHeight, autoRefresh, lastFetch, assets[], liabilities[], history[], yields[], inflation[], calendar[], goals[], budget{}, chat{ack,endpoint,model,messages[]} }`. No category-management fields — categories are just strings on each asset/liability. **All monetary values are stored in USD regardless of the selected display currency.**
+- **There is no test suite in the repo.** The quarterly archive was QA'd with a throwaway Playwright script driving the real builds over `file://` (Chrome, plus Playwright's Firefox and WebKit). Two things will bite anyone automating this page again: **`page.wait_for_function()` fails** — it polls by evaluating a string, which the hash-only `script-src` correctly refuses (`EvalError … 'unsafe-eval'`); poll `page.evaluate()` from the test side instead, which isn't subject to page CSP. And **don't assign to a global named `status` in an evaluate** — it's `window.status` and coerces arrays to strings. Don't "fix" the first one with `bypass_csp`: the CSP is part of what needs testing.
+- State object shape: `{ updated, onboarded, hintsDone, profile{name,goal,nameColor}, theme, lang, currency, fx{rates{},lastFetch}, calendarOrder[], liveCalHeight, autoRefresh, lastFetch, assets[], liabilities[], history[], yields[], inflation[], calendar[], goals[], budget{}, chat{ack,endpoint,model,messages[]}, archive{lastQuarter,lastAt,salt,head,count} }`. No category-management fields — categories are just strings on each asset/liability. **All monetary values are stored in USD regardless of the selected display currency.**
 - **Every new state field needs a line in `sanitizeState()`** — it is the single door into `state` (called by both `load()` and `importJSON()`) and supplies every default, so a field missing from it is silently dropped on the next load. This replaces the old per-scalar `load()` backfills, which are gone. `normalizeBudget()` still plays the same role for the budget block. See **Security posture**.
 - `budget` = `{ income:[{id,name,cat,amount,optional,notes}], expenses:[{id,name,cat,amount,limit,kind,optional,notes}], assumptions:{rate,years} }`, where `kind` ∈ `essential|discretionary`. Categories come from the active goal's `CAT_SETS` entry (personal 11 income / 21 expense; business 7 / 16). **`normalizeBudget()` is the compatibility shim** — called from BOTH `load()` and `importJSON()`; it backfills missing arrays/assumptions/ids and coerces a bad `kind`, so older saves and partial imports don't crash the tab. Any new budget field should get a default there too.
 - `assets`/`liabilities` items: `{ id, name, cat, value, notes }`. Categories come from the active goal's `CAT_SETS` entry (personal 13 assets incl. "Alternative Asset" and "Other" / 6 liabilities; business 10 / 6) — no user-editable category list. `colorForCat(c)` returns the curated color from `CAT_COLOR` when one exists, otherwise a deterministic hash-based color from `CAT_PALETTE`, so any category string (even a stray/legacy one) still renders with a stable color.

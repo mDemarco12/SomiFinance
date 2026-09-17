@@ -67,6 +67,7 @@ SomiFinance is a single-page dashboard for tracking your net worth alongside the
 - **Make it yours** — change your display name at any time from ⚙, and pick the colour it shows in beside the SomiFinance logo (cyan, your theme's accent, green or blue — each one adapts to whichever theme you're on)
 - **Scrolling ticker tape** summarizing your key numbers at a glance
 - **Export / Import** your full dataset as JSON for backup or transfer
+- **Quarterly archive** — once a quarter, seal what your books say into an encrypted, append-only history file, then open it later to see every past quarter side by side (marked `Q1 26`, `Q2 26`, …). Each entry is locked with your passphrase and chained to the one before it, so an edited, deleted or reordered quarter is flagged rather than silently accepted. **It's for historical tracking, not backup** — nothing in an archive can be restored into the app, and a lost passphrase can't be recovered. Use Export for backups
 - **Snapshot history** — hit Refresh to log a dated point to your net worth chart whenever you update your figures
 - **Optional auto-refresh** of Treasury and CPI data on load (ships off — see below)
 - A gentle reminder banner if your numbers haven't been touched in a while
@@ -100,6 +101,8 @@ Chart.js is bundled directly into the file rather than loaded from a CDN, so **o
 | U.S. Treasury + BLS | Refresh on Macro Signals (or on load, if you turn auto-refresh on) | Latest yields and CPI |
 | open.er-api.com | Only when a non-USD currency is selected | Exchange rates |
 | Your own machine (`127.0.0.1`/`localhost`) | When you open the ✦ assistant panel (one quick check that Ollama is reachable) and when you send it a message | Local Ollama chat — never leaves your computer |
+
+The quarterly archive makes no network requests at all: it's encrypted in your browser with its built-in Web Crypto, and the file goes wherever you save it. The passphrase is never stored — not in the file, not in the browser.
 
 Each fails gracefully — if a request doesn't go through, the app keeps working and falls back to manual entry or the last cached values.
 

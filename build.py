@@ -232,6 +232,7 @@ function seed(){
     liveCalHeight:500,   // px height of the TradingView box — user-set via the corner grip
     autoRefresh:"off",   // off | stale | always — default off keeps page load request-free
     lastFetch:"",        // YYYY-MM-DD of the last fully successful macro fetch
+    archive:{lastQuarter:"",lastAt:"",salt:"",head:"",count:0},   // nudge + truncation anchor only
     assets:%s,
     liabilities:%s,
     history:[],
