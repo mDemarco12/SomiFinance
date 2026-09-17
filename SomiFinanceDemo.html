@@ -27,7 +27,7 @@
 -->
 <meta http-equiv="Content-Security-Policy" content="
   default-src 'none';
-  script-src 'sha256-LEfI6wtiATeJWC0ehfYamH0fHWvD5leT9b99SJsRVXU=' 'sha256-J6vJ6hc46s4vDBfBJG+Y+iv7MeWLbxW2cM3IJjwfLJM=' https://s3.tradingview.com;
+  script-src 'sha256-LEfI6wtiATeJWC0ehfYamH0fHWvD5leT9b99SJsRVXU=' 'sha256-7c9+8SWSMhwuKUP0q1c76teOB07Fi7a3/z9M8FAVOwU=' https://s3.tradingview.com;
   style-src 'unsafe-inline';
   img-src data: https:;
   connect-src https://home.treasury.gov https://api.bls.gov https://open.er-api.com http://127.0.0.1:* http://localhost:*;
@@ -408,6 +408,37 @@
     font-size:var(--l-micro);letter-spacing:.1em;text-transform:uppercase;text-align:left}
   .set-danger button:hover{border-color:var(--down);background:rgba(229,72,77,.08)}
 
+  /* quarterly archive. The quarter marker is red on purpose: here --down is an audit/period
+     marker, NOT the "loss" meaning it carries everywhere else in the app. It reuses the token
+     anyway so it re-themes across all five themes — a hardcoded red washes out on Latte. */
+  .q-badge{display:inline-block;padding:2px 8px;border:1px solid var(--down);border-radius:3px;
+    color:var(--down);font-family:var(--mono);font-weight:700;letter-spacing:.04em;
+    font-variant-numeric:tabular-nums;white-space:nowrap;line-height:1.35}
+  .q-badge.sm{padding:0 5px;font-size:.92em}
+  .set-note{font-size:11px;color:var(--muted);line-height:1.45;margin:2px 4px 8px}
+  .set-note b{color:var(--ink);font-weight:600}
+  /* the table scrolls inside the panel rather than squashing — at phone width a squashed table
+     wraps dates across two lines and clips the expanded ledger's figures */
+  .arch-wrap{overflow-x:auto}
+  .arch-wrap>table{min-width:680px}
+  .arch-wrap td.tnum,.arch-wrap td.num{white-space:nowrap}
+  .arch-row{cursor:pointer}
+  .arch-row:hover td,.arch-row:focus-visible td{background:var(--panel-2)}
+  .arch-row:focus-visible{outline:2px solid var(--amber);outline-offset:-2px}
+  .arch-row .caret{display:inline-block;color:var(--faint);margin-right:6px;transition:transform .15s}
+  .arch-row[aria-expanded="true"] .caret{transform:rotate(90deg)}
+  .arch-ok{color:var(--up)}
+  .arch-bad{color:var(--down);font-weight:600}
+  .arch-old{color:var(--faint)}
+  .arch-detail>td{background:var(--panel-2);padding:14px 16px}
+  .arch-detail .ad-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr));gap:16px}
+  .arch-detail h4{margin:0 0 6px;font-size:var(--l-micro);letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:600}
+  .arch-detail table{font-size:var(--t-small)}
+  .arch-detail td,.arch-detail th{padding:4px 6px}
+  .arch-warn{color:var(--down);font-weight:600}
+  .welcome .wc-err{min-height:1.3em;margin-top:12px;font-size:13px;font-weight:600}
+  .welcome select option{color:#000}
+
   /* guided hints — highlight the field, explain it beside it, ✕ to leave */
   .hint-target{outline:2px solid var(--amber)!important;outline-offset:3px;border-radius:6px;
     box-shadow:0 0 0 6px color-mix(in srgb,var(--amber) 22%,transparent);position:relative;z-index:60}
@@ -568,6 +599,7 @@
   <button class="act" id="exportBtn" title="Download all data as JSON">⭳ Export</button>
   <button class="act" id="importBtn" title="Load a JSON backup">⭱ Import</button>
   <input type="file" id="importFile" accept="application/json" hidden>
+  <input type="file" id="archFile" accept=".somiq,application/json" hidden>
   <div class="theme-wrap">
     <button class="act" id="cogBtn" aria-haspopup="true" aria-expanded="false" aria-label="Settings" title="Settings">⚙</button>
     <div class="theme-list" id="themeList" role="menu" hidden>
@@ -612,6 +644,12 @@
           <span class="sh-name">✦ Assistant</span><span class="sh-cur" id="shCurChat"></span><span class="sh-caret">›</span>
         </button>
         <div class="set-body" id="chatSetItems" hidden></div>
+      </div>
+      <div class="set-sec">
+        <button class="set-head" type="button" data-sec="arch" aria-expanded="false" aria-controls="archItems">
+          <span class="sh-name">⧉ Quarterly archive</span><span class="sh-cur" id="shCurArch"></span><span class="sh-caret">›</span>
+        </button>
+        <div class="set-body" id="archItems" hidden></div>
       </div>
       <!-- Not a .set-sec: openSetSection() treats every .set-head as an accordion panel, and a
            one-shot destructive action is not a picker. Plain button, set apart by a rule. -->
@@ -659,6 +697,26 @@
         <div class="chart-box"><canvas id="nwChart" role="img" aria-label="Line chart of net worth from logged snapshots over time"></canvas></div>
         <div class="note" id="nwChartNote"></div>
       </div>
+    </div>
+    <!-- Read-only by design: an archive is a historical record, not a backup, so nothing in this
+         panel writes to state. See renderArchive(). -->
+    <div class="panel" id="archPanel" style="margin-top:16px" hidden>
+      <h3><span id="hOvArchive">Quarterly archive</span> <span class="tag" id="archTag"></span></h3>
+      <div class="read-row" id="archReads"></div>
+      <div class="arch-wrap">
+        <table>
+          <thead><tr>
+            <th style="width:13%" id="thArchQuarter">Quarter</th>
+            <th style="width:14%" id="thArchTaken">Archived on</th>
+            <th class="num" style="width:17%" id="thArchNet">Net worth</th>
+            <th class="num" style="width:17%" id="thArchAssets">Assets</th>
+            <th class="num" style="width:17%" id="thArchLiab">Liabilities</th>
+            <th id="thArchStatus">Status</th>
+          </tr></thead>
+          <tbody id="archBody"></tbody>
+        </table>
+      </div>
+      <div class="note">A sealed, read-only record of what your books said when each quarter was archived. Figures are shown in USD, the unit they were recorded in. <b>This is not a backup</b> — nothing here can be restored into the app. Use ⭳ Export for backups.</div>
     </div>
   </section>
 
@@ -987,6 +1045,13 @@ const fmt2=n=>{const c=curInfo(),v=n*fxRate();return (v<0?"-":"")+c.symbol+Math.
 const tickMoney=v=>curInfo().symbol+((+v)*fxRate()).toLocaleString(undefined,{maximumFractionDigits:0});
 const tickMoneyK=v=>curInfo().symbol+((+v)*fxRate()/1000).toFixed(0)+"k";
 const today=()=>new Date().toISOString().slice(0,10);
+// Quarters have two forms, kept apart on purpose. Stored: "2026-Q3" — sortable, unambiguous,
+// century-proof; this is what goes in an archive file. Displayed: "Q3 26", standard finance
+// shorthand. Never store the display form.
+const QUARTER_RE=/^\d{4}-Q[1-4]$/;
+const quarterOf=d=>{const [y,m]=String(d).split("-");return y+"-Q"+(Math.floor((+m-1)/3)+1);};
+const quarterLabel=q=>{const [y,qq]=String(q).split("-");return qq+" "+String(y).slice(2);};
+const quarterBefore=q=>{const [y,qq]=String(q).split("-Q");return +qq===1?(+y-1)+"-Q4":y+"-Q"+(+qq-1);};
 // crypto.randomUUID where available — ids are the identity key for edit/delete, and since
 // importJSON() now regenerates every id, a collision would silently retarget a row.
 const uid=()=>(self.crypto&&crypto.randomUUID)?crypto.randomUUID():Math.random().toString(36).slice(2,9);
@@ -1118,6 +1183,7 @@ function seed(){
     liveCalHeight:500,   // px height of the TradingView box — user-set via the corner grip
     autoRefresh:"off",   // off | stale | always — default off keeps page load request-free
     lastFetch:"",        // YYYY-MM-DD of the last fully successful macro fetch
+    archive:{lastQuarter:"",lastAt:"",salt:"",head:"",count:0},   // nudge + truncation anchor only
     assets,
     liabilities,
     history:demoHistory(netNow,liabNow),
@@ -1209,6 +1275,7 @@ function normalizeAddons(){
   if(!CHAT_LOOPBACK.test(state.chat.endpoint||""))state.chat.endpoint=CHAT_ENDPOINT_DEFAULT;
   if(typeof state.chat.model!=="string")state.chat.model="";
   if(!Array.isArray(state.chat.messages))state.chat.messages=[];
+  if(!state.archive||typeof state.archive!=="object")state.archive={lastQuarter:"",lastAt:"",salt:"",head:"",count:0};
 }
 /* @variant:begin seedBudget */
 // The demo build fills every amount so the Budgeting tab, its totals and the future-spend
@@ -1346,6 +1413,14 @@ function sanitizeState(d){
   s.liveCalHeight=clampLiveCal(sNum(o.liveCalHeight,500));
   s.autoRefresh=sPick(o.autoRefresh,["off","stale","always"],"off");
   s.lastFetch=sStr(o.lastFetch,40);
+
+  // Quarterly archive bookkeeping. Never archive CONTENT — that stays in the encrypted file and
+  // the ephemeral archiveSession. salt/head are public values (the salt is cleartext in the file,
+  // head is a ciphertext hash); they let loadArchive() notice a file missing its newest entries.
+  const ar=(o.archive&&typeof o.archive==="object")?o.archive:{};
+  const b64ish=v=>(typeof v==="string"&&v.length<=64&&/^[A-Za-z0-9+/]+=*$/.test(v))?v:"";
+  s.archive={lastQuarter:QUARTER_RE.test(ar.lastQuarter)?ar.lastQuarter:"",lastAt:sDateN(ar.lastAt),
+    salt:b64ish(ar.salt),head:b64ish(ar.head),count:Math.max(0,Math.min(1e6,Math.round(sNum(ar.count))))};
 
   // cat stays a free string, not a CAT_SETS allowlist — the Overview allocation panel is
   // documented to render whatever category string an asset carries, and colorForCat() already
@@ -1520,6 +1595,8 @@ const LANGS={
     "ov.netWorth":"Net worth","ov.totalAssets":"Total assets","ov.totalLiab":"Total liabilities",
     "ov.invested":"Invested (markets)","ov.cash":"Cash & equivalents",
     "ov.allocByCategory":"Allocation by category","ov.nwOverTime":"Net worth over time",
+    "arch.title":"Quarterly archive","arch.quarter":"Quarter","arch.taken":"Archived on",
+    "arch.net":"Net worth","arch.assets":"Assets","arch.liab":"Liabilities","arch.status":"Status",
     "alloc.largest":"Largest","alloc.top3":"Top 3","alloc.cashBrokerage":"Cash + brokerage",
     "ledger.assets":"Assets","ledger.liabilities":"Liabilities",
     "ledger.addAsset":"Add asset","ledger.addLiability":"Add liability",
@@ -1545,6 +1622,8 @@ const LANGS={
     "ov.netWorth":"淨資產","ov.totalAssets":"總資產","ov.totalLiab":"總負債",
     "ov.invested":"已投資（市場）","ov.cash":"現金與約當現金",
     "ov.allocByCategory":"依類別配置","ov.nwOverTime":"淨資產趨勢",
+    "arch.title":"季度存檔","arch.quarter":"季度","arch.taken":"存檔日期",
+    "arch.net":"淨資產","arch.assets":"資產","arch.liab":"負債","arch.status":"狀態",
     "alloc.largest":"最大類別","alloc.top3":"前三大","alloc.cashBrokerage":"現金＋券商",
     "ledger.assets":"資產","ledger.liabilities":"負債",
     "ledger.addAsset":"新增資產","ledger.addLiability":"新增負債",
@@ -1570,6 +1649,8 @@ const LANGS={
     "ov.netWorth":"净资产","ov.totalAssets":"总资产","ov.totalLiab":"总负债",
     "ov.invested":"已投资（市场）","ov.cash":"现金及现金等价物",
     "ov.allocByCategory":"按类别配置","ov.nwOverTime":"净资产趋势",
+    "arch.title":"季度存档","arch.quarter":"季度","arch.taken":"存档日期",
+    "arch.net":"净资产","arch.assets":"资产","arch.liab":"负债","arch.status":"状态",
     "alloc.largest":"最大类别","alloc.top3":"前三大","alloc.cashBrokerage":"现金＋券商",
     "ledger.assets":"资产","ledger.liabilities":"负债",
     "ledger.addAsset":"新增资产","ledger.addLiability":"新增负债",
@@ -1599,6 +1680,8 @@ const CHROME_MAP={
   mlMacro:"tab.macro",mlCalendar:"tab.calendar",mlAbout:"tab.about",
   hOvNetWorth:"ov.netWorth",lOvTotalAssets:"ov.totalAssets",lOvTotalLiab:"ov.totalLiab",
   lOvInvested:"ov.invested",lOvCash:"ov.cash",hOvAlloc:"ov.allocByCategory",hOvNwOverTime:"ov.nwOverTime",
+  hOvArchive:"arch.title",thArchQuarter:"arch.quarter",thArchTaken:"arch.taken",thArchNet:"arch.net",
+  thArchAssets:"arch.assets",thArchLiab:"arch.liab",thArchStatus:"arch.status",
   hLedgerAssets:"ledger.assets",thAssetItem:"col.item",thAssetCat:"col.category",
   thAssetValue:"col.value",thAssetNotes:"col.notes",lblAssetTotal:"ov.totalAssets",
   hLedgerLiab:"ledger.liabilities",thLiabItem:"col.item",thLiabCat:"col.category",
@@ -1765,6 +1848,7 @@ function renderOverview(){
     const c=document.getElementById("nwChart");if(c&&c.getContext){c.getContext("2d").clearRect(0,0,c.width,c.height);}
     note.innerHTML="One snapshot logged so far. Each <b>Refresh</b> adds a dated point — the curve builds as you use it.";
   }
+  renderArchive();
 }
 
 /* ---------- render: ledger ---------- */
@@ -2552,6 +2636,7 @@ function setSectionCurrent(){
   document.getElementById("shCurGoal").textContent=g.label;
   const nm=((state.profile&&state.profile.name)||"").trim();
   document.getElementById("shCurName").textContent=nm||"Not set";
+  renderArchiveCurrent();
   document.getElementById("shCurChat").textContent=
     chatConn.busy?"Checking…":
     (chatConn.checked&&!chatConn.ok)?"Not connected":
@@ -2702,6 +2787,470 @@ function snapshot(){
   if(h.length&&h[h.length-1].date===t){h[h.length-1]={date:t,net:nw,assets:totalAssets(),liab:totalLiab()};}
   else{h.push({date:t,net:nw,assets:totalAssets(),liab:totalLiab()});}
   state.updated=t;save();
+}
+
+/* ---------- quarterly archive ----------
+   AN AUDIT RECORD, NOT A BACKUP. ⭳ Export makes a complete, restorable backup; the archive is the
+   opposite — a write-once, read-only history of what the books said each quarter, with
+   deliberately NO path from it back into state. archivePayload() carries the financial record
+   only (no theme/lang/fx/onboarding/chat), so a file can't restore an install even by hand.
+   Don't add a Restore: an archive that can be restored is a backup, and one that can be edited
+   and then restored is worse than no archive at all.
+
+   File (.somiq) = a cleartext JSON envelope {format,version,build,kdf,cipher,entries[]}. It is
+   cleartext because the page must read the KDF parameters before it can ask for a passphrase.
+   Each entry is {id,quarter,takenAt,prev,iv,ct}:
+     - ct is AES-256-GCM over archivePayload(), keyed by PBKDF2-SHA256(passphrase, salt||KEY).
+     - id|quarter|takenAt|prev is GCM additionalData, so re-dating an entry or re-pointing a chain
+       link fails the tag exactly as editing the payload does.
+     - prev = sha256(previous entry's ct): a hash chain, so a removed or reordered entry shows as a
+       break. Dropping the NEWEST entries can't break a chain — state.archive.head is the local
+       anchor that catches that, in the browser that wrote them.
+   KEY in the salt binds a file to the build that wrote it. KEY is public in this HTML, so it adds
+   binding, never secrecy: the passphrase is the only secret, and it is never persisted. */
+const ARCHIVE_FORMAT="somifinance.archive", ARCHIVE_VERSION=1;
+const ARCHIVE_ITER=600000;   // written into each NEW file; loaders always use the file's own value
+// A crafted header can neither demand a trivially weak key nor hang the tab deriving one.
+const ARCHIVE_ITER_MIN=100000, ARCHIVE_ITER_MAX=5000000;
+const ARCHIVE_MAX_ENTRIES=1000, ARCHIVE_MAX_BYTES=50*1024*1024, ARCHIVE_MIN_PASS=8;
+// crypto.subtle only exists in a secure context. file:// counts in Chrome and Safari; if it is
+// ever missing, the feature explains itself and refuses — it never writes a plaintext fallback.
+const cryptoOK=()=>!!(self.crypto&&crypto.subtle&&crypto.getRandomValues&&self.TextEncoder&&self.TextDecoder);
+const B64_RE=/^[A-Za-z0-9+/]*={0,2}$/;
+const b64=u8=>{let s="";for(let i=0;i<u8.length;i+=0x8000)s+=String.fromCharCode.apply(null,u8.subarray(i,i+0x8000));return btoa(s);};
+const unb64=s=>{const bin=atob(s),u=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)u[i]=bin.charCodeAt(i);return u;};
+// Archived figures render in USD, the unit they were recorded in. fmt() would convert them at
+// TODAY's FX rate, which quietly rewrites a historical record.
+const fmtUSD=n=>(n<0?"-":"")+"$"+Math.abs(Math.round(+n||0)).toLocaleString();
+const archTot=(arr,k)=>arr.reduce((s,x)=>s+(+x[k]||0),0);
+
+// Deliberately EPHEMERAL, exactly like chatConn: never persisted, never sanitized into state.
+// A decrypted archive must not reach localStorage — that would put the historical ledger back at
+// rest in plaintext, which is the thing the file exists to prevent.
+let archiveSession=null;   // {key,env,entries[],fileName,headHash,headMissing,chainOK,open:Set}
+
+async function deriveArchiveKey(pass,saltB64,iters){
+  const enc=new TextEncoder(),salt=unb64(saltB64),bind=enc.encode(KEY);
+  const full=new Uint8Array(salt.length+bind.length);full.set(salt);full.set(bind,salt.length);
+  const base=await crypto.subtle.importKey("raw",enc.encode(pass),"PBKDF2",false,["deriveKey"]);
+  return crypto.subtle.deriveKey({name:"PBKDF2",hash:"SHA-256",salt:full,iterations:iters},
+    base,{name:"AES-GCM",length:256},false,["encrypt","decrypt"]);
+}
+const archiveAAD=e=>new TextEncoder().encode([ARCHIVE_FORMAT,e.id,e.quarter,e.takenAt,e.prev||""].join("|"));
+const sha256b64=async u8=>b64(new Uint8Array(await crypto.subtle.digest("SHA-256",u8)));
+async function sealEntry(key,meta,obj){
+  const iv=crypto.getRandomValues(new Uint8Array(12));   // unique per entry — GCM must never reuse one
+  const ct=await crypto.subtle.encrypt({name:"AES-GCM",iv,additionalData:archiveAAD(meta)},key,
+    new TextEncoder().encode(JSON.stringify(obj)));
+  return {id:meta.id,quarter:meta.quarter,takenAt:meta.takenAt,prev:meta.prev,iv:b64(iv),ct:b64(new Uint8Array(ct))};
+}
+async function openEntry(key,e){
+  const pt=await crypto.subtle.decrypt({name:"AES-GCM",iv:unb64(e.iv),additionalData:archiveAAD(e)},key,unb64(e.ct));
+  return JSON.parse(new TextDecoder().decode(pt));
+}
+
+// The financial record only, by EXPLICIT WHITELIST — never "state minus a few keys", so a future
+// state field has to be deliberately added here instead of silently riding into every quarter.
+function archivePayload(){
+  const noId=arr=>(Array.isArray(arr)?arr:[]).map(r=>{const o={};Object.keys(r).forEach(k=>{if(k!=="id")o[k]=r[k];});return o;});
+  const b=state.budget||{},as=b.assumptions||{};
+  return {
+    updated:state.updated,
+    currency:"USD",   // the UNIT of every figure below — not state.currency, which is a display preference
+    profile:{name:(state.profile&&state.profile.name)||"",goal:(state.profile&&state.profile.goal)||"personal"},
+    assets:noId(state.assets),liabilities:noId(state.liabilities),
+    history:noId(state.history),yields:noId(state.yields),inflation:noId(state.inflation),
+    calendar:noId(state.calendar),goals:noId(state.goals),
+    budget:{income:noId(b.income),expenses:noId(b.expenses),assumptions:{rate:as.rate,years:as.years}}
+  };
+}
+
+// "" when the cleartext envelope looks right, otherwise the message to show.
+function archiveEnvelopeError(env){
+  if(!env||typeof env!=="object"||Array.isArray(env)||env.format!==ARCHIVE_FORMAT)return "That file isn't a SomiFinance archive.";
+  if(env.version!==ARCHIVE_VERSION)return "This archive uses a format version this copy of SomiFinance can't read.";
+  const k=(env.kdf&&typeof env.kdf==="object")?env.kdf:{};
+  if(k.name!=="PBKDF2"||k.hash!=="SHA-256"||env.cipher!=="AES-GCM"||typeof env.build!=="string"||
+     typeof k.salt!=="string"||k.salt.length<16||k.salt.length>64||!B64_RE.test(k.salt)||
+     !Number.isInteger(k.iterations)||k.iterations<ARCHIVE_ITER_MIN||k.iterations>ARCHIVE_ITER_MAX)
+    return "This archive's header is damaged, so it can't be opened.";
+  if(!Array.isArray(env.entries)||!env.entries.length||env.entries.length>ARCHIVE_MAX_ENTRIES)
+    return "This archive has no readable entries.";
+  return "";
+}
+const archiveEntryOK=e=>!!e&&typeof e==="object"&&typeof e.id==="string"&&e.id.length>0&&e.id.length<=64&&
+  QUARTER_RE.test(e.quarter)&&/^\d{4}-\d{2}-\d{2}$/.test(e.takenAt)&&
+  (e.prev===null||(typeof e.prev==="string"&&e.prev.length<=64&&B64_RE.test(e.prev)))&&
+  typeof e.iv==="string"&&e.iv.length===16&&B64_RE.test(e.iv)&&
+  typeof e.ct==="string"&&e.ct.length>=24&&B64_RE.test(e.ct);
+
+// Opens every entry and walks the chain. A modified entry is a FINDING to show, never a reason to
+// hide the rest of the history, so nothing here throws per entry. null = nothing opened at all,
+// which is indistinguishable from a wrong passphrase (GCM can't tell the two apart).
+async function buildSession(env,key,fileName){
+  const entries=[],hashes=[];let prevHash=null,opened=0;
+  for(let i=0;i<env.entries.length;i++){
+    const raw=env.entries[i],ok=archiveEntryOK(raw);
+    const r={i,raw,quarter:ok?raw.quarter:"",takenAt:ok?raw.takenAt:"",rec:null,bad:!ok,chain:false,superseded:false};
+    if(ok){
+      r.chain=i===0?raw.prev===null:(prevHash!==null&&raw.prev===prevHash);
+      try{
+        const d=await openEntry(key,raw);
+        // Shape-check before sanitizeState(): it fills anything missing from seed(), and a record
+        // must never display a figure the archive didn't actually carry.
+        if(!d||typeof d!=="object"||!Array.isArray(d.assets)||!Array.isArray(d.liabilities)||
+           !/^\d{4}-\d{2}-\d{2}$/.test(d.updated)||!d.budget||!Array.isArray(d.budget.income)||
+           !Array.isArray(d.budget.expenses))throw 0;
+        r.rec=sanitizeState(d);opened++;
+      }catch(e){r.bad=true;}
+    }
+    try{prevHash=(raw&&typeof raw.ct==="string"&&B64_RE.test(raw.ct))?await sha256b64(unb64(raw.ct)):null;}
+    catch(e){prevHash=null;}
+    if(prevHash)hashes.push(prevHash);
+    entries.push(r);
+  }
+  if(!opened)return null;
+  const latest={};
+  entries.forEach(r=>{if(r.rec)latest[r.quarter]=r.i;});
+  entries.forEach(r=>{r.superseded=!!r.rec&&latest[r.quarter]!==r.i;});
+  const A=state.archive||{};
+  return {key,env,entries,fileName,open:new Set(),
+    headHash:prevHash,
+    // this browser wrote a newer entry into THIS archive (same salt) that the file doesn't contain
+    headMissing:!!(A.salt&&A.salt===env.kdf.salt&&A.head&&!hashes.includes(A.head)),
+    chainOK:entries.every(r=>r.chain&&!r.bad)};
+}
+
+function downloadArchive(env,quarter){
+  // octet-stream, not application/json — Safari appends ".json" to a JSON download's name
+  const blob=new Blob([JSON.stringify(env,null,1)],{type:"application/octet-stream"});
+  const name="somifinance-archive-"+quarter+".somiq";
+  const a=document.createElement("a");a.href=URL.createObjectURL(blob);
+  a.download=name;a.click();URL.revokeObjectURL(a.href);
+  return name;
+}
+
+// Seals one quarter, proves it opens, downloads the whole file, then rebuilds the session FROM
+// WHAT WAS WRITTEN — so the screen always shows what is in the file, never what we meant to write.
+async function writeArchiveEntry(env,key,quarter,prev){
+  if(!QUARTER_RE.test(quarter))return "Pick a quarter to archive.";
+  const entry=await sealEntry(key,{id:uid(),quarter,takenAt:today(),prev},archivePayload());
+  await openEntry(key,entry);
+  // Rebuilt from known fields only: unknown keys in a loaded file are never carried forward.
+  const keep=e=>({id:e.id,quarter:e.quarter,takenAt:e.takenAt,prev:e.prev,iv:e.iv,ct:e.ct});
+  const next={format:ARCHIVE_FORMAT,version:ARCHIVE_VERSION,build:KEY,
+    kdf:{name:"PBKDF2",hash:"SHA-256",iterations:env.kdf.iterations,salt:env.kdf.salt},
+    cipher:"AES-GCM",entries:[...env.entries.map(keep),entry]};
+  const name=downloadArchive(next,quarter);
+  state.archive={lastQuarter:quarter,lastAt:today(),salt:env.kdf.salt,
+    head:await sha256b64(unb64(entry.ct)),count:next.entries.length};
+  save();
+  archiveSession=await buildSession(next,key,name);
+  renderArchiveAll();
+  if(currentTab!=="overview")show("overview");
+  toast("Saved "+name+" — keep this copy in place of your previous archive file.");
+  return "";
+}
+
+const archiveNotBackupHTML=()=>"<b>This is not a backup.</b> An archive is a read-only history — "+
+  "nothing in it can be restored into the app. If you want a backup, cancel and use ⭳ Export.";
+function archiveQuarterChoices(){
+  const cur=quarterOf(today()),prev=quarterBefore(cur),m=+today().slice(5,7);
+  // In a quarter's first month the books being closed are usually the PREVIOUS quarter's.
+  return {cur,prev,dflt:(m-1)%3===0?prev:cur};
+}
+
+// Reuses the welcome overlay the way showResetConfirm() does, in the accent colour rather than
+// .danger — archiving destroys nothing. sub/warn/warnFor return HTML: callers esc() anything
+// user-derived (file names). onSubmit resolves to an error string (dialog stays open) or "".
+function showArchiveDialog(opts){
+  closeThemeMenu();
+  const panel=document.createElement("div");
+  panel.className="intro-wipe hold";
+  panel.setAttribute("role","dialog");
+  panel.setAttribute("aria-modal","true");
+  panel.setAttribute("aria-label",opts.title);
+  const q=archiveQuarterChoices();
+  const pw=(id,lbl,ac)=>`<div class="wc-field"><label for="${id}">${lbl}</label>
+      <input id="${id}" type="password" autocomplete="${ac}" maxlength="200" spellcheck="false"></div>`;
+  panel.innerHTML=`<div class="welcome">
+    <h1>${esc(opts.title)}</h1>
+    <div class="wc-sub">${opts.sub}</div>
+    <div class="wc-warn" id="arWarn"${opts.warn||opts.warnFor?"":" hidden"}>${opts.warn||""}</div>
+    ${opts.quarter?`<div class="wc-field"><label for="arQuarter">Quarter</label><select id="arQuarter">
+      <option value="${q.prev}"${q.dflt===q.prev?" selected":""}>${quarterLabel(q.prev)} — previous quarter</option>
+      <option value="${q.cur}"${q.dflt===q.cur?" selected":""}>${quarterLabel(q.cur)} — current quarter</option>
+    </select></div>`:""}
+    ${opts.pass?pw("arPass","Passphrase",opts.pass==="new"?"new-password":"current-password"):""}
+    ${opts.pass==="new"?pw("arPass2","Passphrase again","new-password"):""}
+    <div class="wc-actions">
+      <button type="button" class="wc-go" id="arGo">${esc(opts.go)}</button>
+      ${opts.noCancel?"":`<button type="button" class="wc-skip" id="arCancel">Cancel</button>`}
+    </div>
+    <div class="wc-err" id="arErr" role="alert"></div>
+  </div>`;
+  document.body.appendChild(panel);
+
+  const $=s=>panel.querySelector(s),go=$("#arGo"),err=$("#arErr"),sel=$("#arQuarter");
+  let busy=false;
+  const setWarn=()=>{
+    if(!opts.warnFor)return;
+    const w=$("#arWarn"),h=opts.warnFor(sel?sel.value:"");
+    w.innerHTML=h;w.hidden=!h;
+  };
+  const close=()=>{
+    document.removeEventListener("keydown",onEsc,true);
+    panel.classList.add("closing");
+    setTimeout(()=>panel.remove(),320);
+    const cog=document.getElementById("cogBtn");
+    if(cog)cog.focus();
+  };
+  // Named onEsc, NOT esc: showResetConfirm()'s handler is called esc, which shadows the global
+  // esc() escaper for its whole body. Don't copy that name into anything that also escapes.
+  const onEsc=e=>{if(e.key==="Escape"&&!busy){e.preventDefault();close();}};
+  const submit=async()=>{
+    if(busy)return;
+    const pass=$("#arPass")?$("#arPass").value:"";
+    if(opts.pass==="new"){
+      if(pass.length<ARCHIVE_MIN_PASS){err.textContent="Use at least "+ARCHIVE_MIN_PASS+" characters.";return;}
+      if(pass!==$("#arPass2").value){err.textContent="The two passphrases don't match.";return;}
+    }else if(opts.pass==="open"&&!pass){err.textContent="Enter this archive's passphrase.";return;}
+    busy=true;
+    const label=go.textContent;
+    go.disabled=true;go.setAttribute("aria-disabled","true");go.textContent="Working…";err.textContent="";
+    let msg="";
+    try{msg=await opts.onSubmit({pass,quarter:sel?sel.value:""});}
+    catch(e){msg="Something went wrong ("+((e&&e.message)||"unknown error")+"). Nothing was saved.";}
+    busy=false;
+    go.disabled=false;go.setAttribute("aria-disabled","false");go.textContent=label;
+    if(!msg){close();return;}
+    err.textContent=msg;
+    const p=$("#arPass");if(p&&opts.pass==="open"){p.value="";p.focus();}
+  };
+  panel.querySelectorAll("input").forEach(i=>i.addEventListener("keydown",e=>{if(e.key==="Enter"){e.preventDefault();submit();}}));
+  if(sel)sel.addEventListener("change",setWarn);
+  go.addEventListener("click",submit);
+  if($("#arCancel"))$("#arCancel").addEventListener("click",()=>{if(!busy)close();});
+  document.addEventListener("keydown",onEsc,true);
+  setWarn();
+  setTimeout(()=>{const f=$("#arPass")||sel||go;if(f)f.focus();},480);   // after the sweep-in settles
+}
+
+const archiveUnavailable=()=>toast("Archiving needs your browser's built-in encryption — see ⚙ → Quarterly archive.");
+function startNewArchive(){
+  if(!cryptoOK())return archiveUnavailable();
+  const A=state.archive||{};
+  showArchiveDialog({
+    title:"Start a new archive",
+    sub:"Seals your current figures as one quarter in a new encrypted file. Keep that file safe — "+
+      "each quarter, open it here and add the next one.",
+    warn:(A.lastQuarter?`You've already archived <span class="q-badge sm">${esc(quarterLabel(A.lastQuarter))}</span> `+
+      "into an archive. A new one splits your history across two files — to keep one continuous record, "+
+      "cancel and <b>open that archive</b> instead.<br><br>":"")+
+      "<b>If you lose this passphrase the archive can't be opened.</b> There is no recovery, by design.<br><br>"+
+      archiveNotBackupHTML(),
+    quarter:true,pass:"new",go:"Create archive",
+    onSubmit:async({pass,quarter})=>{
+      const salt=b64(crypto.getRandomValues(new Uint8Array(16)));
+      const key=await deriveArchiveKey(pass,salt,ARCHIVE_ITER);
+      return writeArchiveEntry({kdf:{iterations:ARCHIVE_ITER,salt},entries:[]},key,quarter,null);
+    }
+  });
+}
+function appendToArchive(){
+  const S=archiveSession;
+  if(!S)return;
+  if(!cryptoOK())return archiveUnavailable();
+  // Sealing a new entry onto a damaged or out-of-date chain would bless the damage.
+  if(!S.chainOK||S.headMissing||!S.headHash){
+    showArchiveDialog({title:"Can't add to this archive",noCancel:true,go:"OK",
+      sub:"This archive didn't pass verification, so nothing new can be sealed onto it. "+
+        "Open your most recent copy, or start a new archive.",onSubmit:async()=>""});
+    return;
+  }
+  showArchiveDialog({
+    title:"Archive a quarter",
+    sub:`Adds your current figures as a sealed entry in <b>${esc(S.fileName)}</b>. Browsers can't `+
+      "overwrite a file, so you'll download an updated copy — keep it in place of the old one.",
+    warnFor:q=>(S.entries.some(r=>r.quarter===q)?`<span class="q-badge sm">${esc(quarterLabel(q))}</span> `+
+      "is already archived. This adds a newer entry that supersedes it; the earlier one stays in the "+
+      "history, marked superseded.<br><br>":"")+archiveNotBackupHTML(),
+    quarter:true,pass:"",go:"Archive quarter",
+    onSubmit:async({quarter})=>writeArchiveEntry(S.env,S.key,quarter,S.headHash)
+  });
+}
+// Mirrors importJSON(): read, validate, and only replace what's on screen once it all worked.
+function loadArchive(file){
+  if(!cryptoOK())return archiveUnavailable();
+  if(file.size>ARCHIVE_MAX_BYTES){toast("That file is too large to be a SomiFinance archive.");return;}
+  const r=new FileReader();
+  r.onload=()=>{
+    let env=null;
+    try{env=JSON.parse(r.result);}catch(e){}
+    const bad=archiveEnvelopeError(env);
+    if(bad){toast(bad);return;}
+    if(env.build!==KEY){
+      showArchiveDialog({title:"Wrong SomiFinance build",noCancel:true,go:"OK",
+        sub:`This archive was written by the <b>${esc(env.build.slice(0,60))}</b> build. Archives only open `+
+          `in the build that wrote them, and this is <b>${esc(KEY)}</b>. Open it in that copy of SomiFinance.`,
+        onSubmit:async()=>""});
+      return;
+    }
+    const fileName=sStr(file.name,120)||"archive.somiq",n=env.entries.length;
+    showArchiveDialog({
+      title:"Open archive",
+      sub:`<b>${esc(fileName)}</b> · ${n} entr${n===1?"y":"ies"}. It opens read-only on the Overview tab, `+
+        "and stays unlocked only until you close it or reload the page.",
+      pass:"open",go:"Open archive",
+      onSubmit:async({pass})=>{
+        const key=await deriveArchiveKey(pass,env.kdf.salt,env.kdf.iterations);
+        const S=await buildSession(env,key,fileName);
+        if(!S)return "Wrong passphrase, or this archive has been modified.";
+        const prev=archiveSession;
+        archiveSession=S;
+        try{renderArchiveAll();show("overview");}
+        catch(e){archiveSession=prev;try{renderArchiveAll();}catch(e2){}return "The archive opened but couldn't be displayed.";}
+        const k=S.entries.filter(x=>x.rec).length;
+        toast(S.chainOK&&!S.headMissing?"Archive verified — "+k+" quarter"+(k===1?"":"s")+" open."
+          :"Archive opened with verification problems — see Overview.");
+        return "";
+      }
+    });
+  };
+  r.onerror=()=>toast("Couldn't read that file.");
+  r.readAsText(file);
+}
+function closeArchive(){
+  archiveSession=null;   // drops the only reference to the (non-extractable) key and the plaintext
+  renderArchiveAll();
+  toast("Archive closed — it's locked again.");
+}
+function renderArchiveAll(){renderArchive();renderArchiveList();setSectionCurrent();}
+
+// ⚙ collapsed header: the nudge. The quarter that's DUE is the one that just closed.
+function renderArchiveCurrent(){
+  const el=document.getElementById("shCurArch");
+  if(!el)return;
+  const S=archiveSession,A=state.archive||{};
+  if(S){const n=S.entries.filter(r=>r.rec).length;el.textContent="Open · "+n+" quarter"+(n===1?"":"s");return;}
+  if(!A.lastQuarter){el.textContent="Not started";return;}
+  const prev=quarterBefore(quarterOf(today())),done=A.lastQuarter>=prev;   // "YYYY-Qn" sorts as text
+  el.innerHTML=`<span class="q-badge sm">${esc(quarterLabel(done?A.lastQuarter:prev))}</span> ${done?"archived":"not archived"}`;
+}
+function renderArchiveList(){
+  const box=document.getElementById("archItems");
+  if(!box)return;
+  if(!cryptoOK()){
+    box.innerHTML=`<div class="set-note">Archiving needs your browser's built-in encryption, which isn't `+
+      "available to this page here. Open SomiFinance in Chrome, Edge or Safari, or serve its folder "+
+      "(<code>python3 -m http.server</code>) and open it from <code>http://localhost</code>. "+
+      "It will never fall back to an unencrypted file.</div>";
+    return;
+  }
+  const S=archiveSession;
+  const opt=(act,title,sub)=>`<button class="theme-opt" type="button" data-arch="${act}"><span class="tn">${title}<small>${sub}</small></span></button>`;
+  let html=`<div class="set-note">A sealed, read-only history of each quarter, for tracking over time. `+
+    "<b>Not a backup</b> — it can't be restored into the app. Use ⭳ Export for backups.</div>";
+  if(S){
+    const n=S.entries.filter(r=>r.rec).length;
+    html+=opt("append","Archive a quarter",esc("Adds a sealed entry to "+S.fileName))+
+      opt("close","Close archive","Locks it again · "+n+" quarter"+(n===1?"":"s")+" open")+
+      opt("load","Open a different archive","Replaces this one once it unlocks");
+  }else{
+    html+=opt("load","Open an archive…","View past quarters, or add the latest one")+
+      opt("new","Start a new archive","Seal your first quarter into a new file");
+  }
+  box.innerHTML=html;
+  // scoped to [data-arch], never the shared .theme-opt class — see renderNameList()
+  box.querySelectorAll("[data-arch]").forEach(b=>b.addEventListener("click",e=>{
+    const act=b.dataset.arch;
+    if(act==="load"){e.stopPropagation();closeThemeMenu();document.getElementById("archFile").click();}
+    else if(act==="new")startNewArchive();
+    else if(act==="append")appendToArchive();
+    else if(act==="close"){closeThemeMenu();closeArchive();}
+  }));
+}
+
+// Overview panel. READ-ONLY: nothing below writes to state. Every archived string is rendered
+// outside cellInput(), so every one goes through esc() — the inflation[].note trap.
+function archiveDetailHTML(r){
+  const rec=r.rec;
+  const rows=list=>list.length?`<table><tbody>${list.map(x=>`<tr><td>${esc(x.name||"—")}`+
+    `${x.notes?`<div style="color:var(--faint)">${esc(x.notes)}</div>`:""}</td>`+
+    `<td style="color:var(--muted)">${esc(x.cat)}</td><td class="num tnum">${fmtUSD(x.value)}</td></tr>`).join("")}</tbody></table>`
+    :`<div class="empty" style="padding:8px">None recorded</div>`;
+  const inc=archTot(rec.budget.income,"amount"),out=archTot(rec.budget.expenses,"amount");
+  const goals=rec.goals.length?`<table><tbody>${rec.goals.map(g=>`<tr><td>${esc(g.name||"—")}</td>`+
+    `<td class="num tnum">${fmtUSD(g.target)}</td><td class="num tnum">${fmtUSD(g.monthly)}/mo</td></tr>`).join("")}</tbody></table>`
+    :`<div class="empty" style="padding:8px">None recorded</div>`;
+  return `<tr class="arch-detail"><td colspan="6"><div class="ad-grid">
+    <div><h4>Assets · ${fmtUSD(archTot(rec.assets,"value"))}</h4>${rows(rec.assets)}</div>
+    <div><h4>Liabilities · ${fmtUSD(archTot(rec.liabilities,"value"))}</h4>${rows(rec.liabilities)}</div>
+    <div><h4>Budget · monthly</h4><table><tbody>
+        <tr><td>Cash in</td><td class="num tnum">${fmtUSD(inc)}</td></tr>
+        <tr><td>Cash out</td><td class="num tnum">${fmtUSD(out)}</td></tr>
+        <tr><td>Net cash flow</td><td class="num tnum">${fmtUSD(inc-out)}</td></tr>
+      </tbody></table>
+      <h4 style="margin-top:12px">Goals</h4>${goals}</div>
+  </div>
+  <div class="note" style="margin-top:10px">Figures last edited ${esc(rec.updated)}${rec.profile.name?" · "+esc(rec.profile.name):""}
+    · ${rec.history.length} net-worth snapshot${rec.history.length===1?"":"s"}
+    · ${rec.budget.income.length+rec.budget.expenses.length} budget rows
+    · ${rec.calendar.length} calendar entr${rec.calendar.length===1?"y":"ies"}</div></td></tr>`;
+}
+function renderArchive(){
+  const panel=document.getElementById("archPanel");
+  if(!panel)return;
+  const S=archiveSession;
+  const body=document.getElementById("archBody"),reads=document.getElementById("archReads"),tag=document.getElementById("archTag");
+  panel.hidden=!S;
+  if(!S){body.innerHTML="";reads.innerHTML="";tag.innerHTML="";return;}
+
+  const opened=S.entries.filter(r=>r.rec);
+  const newest=opened.reduce((a,b)=>(!a||b.quarter>=a.quarter)?b:a,null);
+  tag.innerHTML=(newest?`<span class="q-badge sm">${esc(quarterLabel(newest.quarter))}</span> latest · `:"")+
+    opened.length+" of "+S.entries.length+" open";
+
+  const bad=S.entries.filter(r=>r.bad).length,breaks=S.entries.filter(r=>!r.chain).length;
+  const clean=S.chainOK&&!S.headMissing;
+  const detail=[bad?bad+" entr"+(bad===1?"y":"ies")+" modified":"",breaks?breaks+" chain break"+(breaks===1?"":"s"):"",
+    S.headMissing?"newest entries missing":"",clean?"every entry sealed and chained":""].filter(Boolean).join(" · ");
+  reads.innerHTML=`<div class="read"><span class="rl">File</span><span class="rv" style="font-size:var(--t-body)">${esc(S.fileName)}</span>`+
+      `<span class="rd">${S.entries.length} entr${S.entries.length===1?"y":"ies"} · build ${esc(S.env.build)}</span></div>`+
+    `<div class="read"><span class="rl">Integrity</span><span class="rv ${clean?"arch-ok":"arch-bad"}">${clean?"✓ Verified":"⚠ Problems found"}</span>`+
+      `<span class="rd">${esc(detail)}</span></div>`+
+    (S.headMissing?`<div class="read"><span class="rl">Heads up</span><span class="rd arch-warn">This browser last sealed `+
+      `${esc(quarterLabel((state.archive||{}).lastQuarter||""))} into this archive, and that entry isn't in this file — `+
+      "it's an older copy, or entries were removed from the end.</span></div>":"");
+
+  body.innerHTML=S.entries.map(r=>{
+    const rec=r.rec,open=!!rec&&S.open.has(r.i);
+    const status=[
+      r.bad?`<span class="arch-bad">⚠ modified — can't be opened</span>`:"",
+      !r.chain?`<span class="arch-bad">⚠ chain broken here</span>`:"",
+      (!r.bad&&r.chain)?`<span class="arch-ok">✓ verified</span>`:"",
+      r.superseded?`<span class="arch-old">superseded</span>`:""
+    ].filter(Boolean).join(" · ");
+    const a=rec?archTot(rec.assets,"value"):0,l=rec?archTot(rec.liabilities,"value"):0,m=v=>rec?fmtUSD(v):"—";
+    const attrs=rec?` class="arch-row" data-archi="${r.i}" tabindex="0" aria-expanded="${open}"`:"";
+    return `<tr${attrs}><td>${rec?'<span class="caret">›</span>':""}`+
+      (r.quarter?`<span class="q-badge">${esc(quarterLabel(r.quarter))}</span>`:`<span class="arch-bad">unknown</span>`)+
+      `</td><td class="tnum">${esc(r.takenAt||"—")}</td><td class="num tnum">${m(a-l)}</td>`+
+      `<td class="num tnum">${m(a)}</td><td class="num tnum">${m(l)}</td><td>${status}</td></tr>`+
+      (open?archiveDetailHTML(r):"");
+  }).join("");
+
+  body.querySelectorAll("tr.arch-row").forEach(tr=>{
+    const i=+tr.dataset.archi;
+    const toggle=()=>{
+      S.open.has(i)?S.open.delete(i):S.open.add(i);
+      renderArchive();
+      const again=body.querySelector(`tr[data-archi="${i}"]`);
+      if(again)again.focus();
+    };
+    tr.addEventListener("click",toggle);
+    tr.addEventListener("keydown",e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();toggle();}});
+  });
 }
 
 /* ---------- export / import ---------- */
@@ -3864,6 +4413,7 @@ function boot(rerender){
   renderGoalList();
   renderNameList();
   renderChatSettings();
+  renderArchiveList();
   renderChatLog();
   setSectionCurrent();
   applyChromeI18n();
@@ -3942,6 +4492,7 @@ function init(){
   document.getElementById("exportBtn").addEventListener("click",exportJSON);
   document.getElementById("importBtn").addEventListener("click",()=>document.getElementById("importFile").click());
   document.getElementById("importFile").addEventListener("change",e=>{if(e.target.files[0])importJSON(e.target.files[0]);e.target.value="";});
+  document.getElementById("archFile").addEventListener("change",e=>{if(e.target.files[0])loadArchive(e.target.files[0]);e.target.value="";});
 
   // add rows
   document.querySelectorAll("[data-add]").forEach(btn=>btn.addEventListener("click",()=>{
