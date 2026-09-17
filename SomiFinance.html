@@ -30,7 +30,7 @@
 -->
 <meta http-equiv="Content-Security-Policy" content="
   default-src 'none';
-  script-src 'sha256-LEfI6wtiATeJWC0ehfYamH0fHWvD5leT9b99SJsRVXU=' 'sha256-r4F/arQmfVRyzghXrbf9wlmL2TiOZYSy2vYMGujYfx0=' https://s3.tradingview.com;
+  script-src 'sha256-LEfI6wtiATeJWC0ehfYamH0fHWvD5leT9b99SJsRVXU=' 'sha256-oMCCTeO90ZXcNZLQbBfqtd03wiW0UxyGVLbkU5X74zI=' https://s3.tradingview.com;
   style-src 'unsafe-inline';
   img-src data: https:;
   connect-src https://home.treasury.gov https://api.bls.gov https://open.er-api.com http://127.0.0.1:* http://localhost:*;
@@ -135,33 +135,50 @@
   .theme-wrap{position:relative}
   #cogBtn{font-size:22px;padding:4px 12px;line-height:1}
   /* max-height + overscroll-behavior:contain — the menu scrolls on its own without
-     chaining the scroll to the page behind it once you reach either end */
-  .theme-list{position:absolute;top:calc(100% + 6px);right:0;min-width:250px;background:var(--panel-2);border:1px solid var(--line);border-radius:10px;padding:8px;box-shadow:0 12px 30px rgba(0,0,0,.5);z-index:50;max-height:min(70vh,520px);overflow-y:auto;overscroll-behavior:contain}
+     chaining the scroll to the page behind it once you reach either end.
+     User-resizable: every size inside the menu is calc(basePx * var(--set-scale,1)), and
+     applySetMenuScale() is the sole writer of --set-scale. Base values are the old fixed px, so
+     scale 1 renders exactly as before. Deliberately NOT scaled: borders, radii, shadow, and
+     max-height — the height cap stays viewport-tied so a large scale scrolls sooner instead of
+     running the panel off the bottom of the screen. min-width is capped to the viewport for the
+     same reason sideways. */
+  .theme-list{position:absolute;top:calc(100% + 6px);right:0;min-width:min(calc(250px * var(--set-scale,1)),calc(100vw - 24px));background:var(--panel-2);border:1px solid var(--line);border-radius:10px;padding:calc(8px * var(--set-scale,1));box-shadow:0 12px 30px rgba(0,0,0,.5);z-index:50;max-height:min(70vh,520px);overflow-y:auto;overscroll-behavior:contain}
   .theme-list[hidden]{display:none}
-  .set-sec + .set-sec{border-top:1px solid var(--line);margin-top:6px;padding-top:6px}
+  .set-sec + .set-sec{border-top:1px solid var(--line);margin-top:calc(6px * var(--set-scale,1));padding-top:calc(6px * var(--set-scale,1))}
   /* explicit line-height so CJK values (繁體中文) don't render a taller line box than
      Latin ones and leave that row 2px out of step with the others */
-  .set-head{display:flex;align-items:center;gap:8px;width:100%;text-align:left;background:none;border:1px solid transparent;border-radius:8px;padding:8px;cursor:pointer;color:var(--muted);font-size:10px;letter-spacing:.16em;text-transform:uppercase;font-family:inherit;line-height:1.25}
+  .set-head{display:flex;align-items:center;gap:calc(8px * var(--set-scale,1));width:100%;text-align:left;background:none;border:1px solid transparent;border-radius:8px;padding:calc(8px * var(--set-scale,1));cursor:pointer;color:var(--muted);font-size:calc(10px * var(--set-scale,1));letter-spacing:.16em;text-transform:uppercase;font-family:inherit;line-height:1.25}
   .set-head:hover{background:var(--panel);border-color:var(--line);color:var(--ink)}
   .set-head:focus-visible{outline:2px solid var(--amber);outline-offset:-1px}
   .set-head[aria-expanded="true"]{color:var(--amber)}
   /* nowrap + flex:none keeps the value on one line, right-aligned with the others,
      instead of being squeezed and wrapped by a long section label */
-  .set-head .sh-cur{margin-left:auto;color:var(--ink);font-size:12px;letter-spacing:0;text-transform:none;white-space:nowrap;flex:none;text-align:right}
+  .set-head .sh-cur{margin-left:auto;color:var(--ink);font-size:calc(12px * var(--set-scale,1));letter-spacing:0;text-transform:none;white-space:nowrap;flex:none;text-align:right}
   .set-head[aria-expanded="true"] .sh-cur{display:none}
-  .set-head .sh-caret{flex:none;font-size:11px;transition:transform .15s}
+  .set-head .sh-caret{flex:none;font-size:calc(11px * var(--set-scale,1));transition:transform .15s}
   .set-head[aria-expanded="true"] .sh-caret{transform:rotate(90deg)}
   .set-body[hidden]{display:none}
-  .theme-opt{display:flex;align-items:center;gap:11px;width:100%;text-align:left;background:none;border:1px solid transparent;color:var(--ink);padding:9px 10px;border-radius:8px;cursor:pointer;font-size:13.5px}
+  .theme-opt{display:flex;align-items:center;gap:calc(11px * var(--set-scale,1));width:100%;text-align:left;background:none;border:1px solid transparent;color:var(--ink);padding:calc(9px * var(--set-scale,1)) calc(10px * var(--set-scale,1));border-radius:8px;cursor:pointer;font-size:calc(13.5px * var(--set-scale,1))}
   .theme-opt:hover{background:var(--panel);border-color:var(--line)}
   .theme-opt[aria-current="true"]{border-color:var(--amber)}
   .theme-opt .sw{display:flex;flex:none;border-radius:5px;overflow:hidden;border:1px solid var(--line)}
-  .theme-opt .sw i{width:11px;height:22px;display:block}
+  .theme-opt .sw i{width:calc(11px * var(--set-scale,1));height:calc(22px * var(--set-scale,1));display:block}
   .theme-opt .tn{flex:1}
-  .theme-opt .tn small{display:block;color:var(--muted);font-size:11px}
-  .theme-opt .chk{color:var(--amber);font-size:13px;opacity:0}
+  .theme-opt .tn small{display:block;color:var(--muted);font-size:calc(11px * var(--set-scale,1))}
+  .theme-opt .chk{color:var(--amber);font-size:calc(13px * var(--set-scale,1));opacity:0}
   .set-input{width:100%;background:var(--panel-2);border:1px solid var(--line);color:var(--ink);
-    padding:8px 10px;border-radius:8px;font-size:13px;font-family:inherit;margin-bottom:6px}
+    padding:calc(8px * var(--set-scale,1)) calc(10px * var(--set-scale,1));border-radius:8px;
+    font-size:calc(13px * var(--set-scale,1));font-family:inherit;margin-bottom:calc(6px * var(--set-scale,1))}
+  /* Resize grip for the settings menu. Lives in a sticky footer row so it stays reachable while
+     a long section (Quarterly archive) scrolls underneath it; the row's own background is the
+     panel's, so scrolled content passes behind it rather than showing through. The negative
+     side/bottom margins cancel .theme-list's padding so the row spans edge to edge. */
+  .set-grip-row{position:sticky;bottom:calc(-8px * var(--set-scale,1));display:flex;justify-content:flex-start;
+    margin:calc(6px * var(--set-scale,1)) calc(-8px * var(--set-scale,1)) calc(-8px * var(--set-scale,1));
+    padding:calc(4px * var(--set-scale,1)) calc(8px * var(--set-scale,1));background:var(--panel-2);z-index:1}
+  /* .resize-grip is position:absolute for panels; here it's an in-flow child of the sticky row */
+  .resize-grip.set-scale-grip{position:static;width:calc(18px * var(--set-scale,1));height:calc(18px * var(--set-scale,1));cursor:nesw-resize}
+  body.resizing-set,body.resizing-set *{cursor:nesw-resize!important;user-select:none}
   .set-input:focus{outline:none;border-color:var(--amber)}
   .theme-opt[aria-current="true"] .chk{opacity:1}
 
@@ -405,10 +422,10 @@
     border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit}
   .welcome .wc-alt:hover{background:#000}
   /* destructive action, deliberately last and set apart from the five pickers above it */
-  .set-danger{width:100%;margin-top:6px;padding-top:10px;border-top:1px solid var(--line)}
+  .set-danger{width:100%;margin-top:calc(6px * var(--set-scale,1));padding-top:calc(10px * var(--set-scale,1));border-top:1px solid var(--line)}
   .set-danger button{width:100%;background:none;border:1px solid var(--line);color:var(--down);
-    padding:9px 10px;border-radius:8px;cursor:pointer;font-family:var(--mono);
-    font-size:var(--l-micro);letter-spacing:.1em;text-transform:uppercase;text-align:left}
+    padding:calc(9px * var(--set-scale,1)) calc(10px * var(--set-scale,1));border-radius:8px;cursor:pointer;font-family:var(--mono);
+    font-size:calc(var(--l-micro) * var(--set-scale,1));letter-spacing:.1em;text-transform:uppercase;text-align:left}
   .set-danger button:hover{border-color:var(--down);background:rgba(229,72,77,.08)}
 
   /* quarterly archive. The quarter marker is red on purpose: here --down is an audit/period
@@ -418,7 +435,8 @@
     color:var(--down);font-family:var(--mono);font-weight:700;letter-spacing:.04em;
     font-variant-numeric:tabular-nums;white-space:nowrap;line-height:1.35}
   .q-badge.sm{padding:0 5px;font-size:.92em}
-  .set-note{font-size:11px;color:var(--muted);line-height:1.45;margin:2px 4px 8px}
+  .set-note{font-size:calc(11px * var(--set-scale,1));color:var(--muted);line-height:1.45;
+    margin:calc(2px * var(--set-scale,1)) calc(4px * var(--set-scale,1)) calc(8px * var(--set-scale,1))}
   .set-note b{color:var(--ink);font-weight:600}
   /* the table scrolls inside the panel rather than squashing — at phone width a squashed table
      wraps dates across two lines and clips the expanded ledger's figures */
@@ -658,6 +676,12 @@
            one-shot destructive action is not a picker. Plain button, set apart by a rule. -->
       <div class="set-danger">
         <button type="button" id="resetBtn">⟲ Reset all data</button>
+      </div>
+      <div class="set-grip-row">
+        <button type="button" class="resize-grip set-scale-grip" id="setMenuResize" title="Drag to resize · double-click to reset"
+          aria-label="Resize the settings menu. Use arrow keys to adjust; double-click to reset.">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><polygon points="1,1 1,15 15,15"/></svg>
+        </button>
       </div>
     </div>
   </div>
@@ -1128,6 +1152,10 @@ const esc=s=>String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"
 /* Live-calendar height bounds — declared up here because load() clamps with it. */
 const LIVE_CAL_MIN=260, LIVE_CAL_MAX=1600;
 const clampLiveCal=h=>Math.min(LIVE_CAL_MAX,Math.max(LIVE_CAL_MIN,Math.round(h)));
+/* Settings-menu scale bounds — same reason. A ratio, not px, so it rounds to 2dp rather than to
+   whole numbers. 1 is the original fixed-size menu. */
+const SET_SCALE_MIN=0.85, SET_SCALE_MAX=1.6;
+const clampSetScale=s=>Math.round(Math.min(SET_SCALE_MAX,Math.max(SET_SCALE_MIN,s))*100)/100;
 
 /* ---------- seed (first run only) ----------
    Demo data ONLY. Keep every figure here obviously fake — placeholder names, round numbers,
@@ -1154,6 +1182,7 @@ function seed(){
     fx:{rates:{USD:1},lastFetch:""},
     calendarOrder:["personal","live"],
     liveCalHeight:500,   // px height of the TradingView box — user-set via the corner grip
+    setMenuScale:1,      // ⚙ menu size, text and spacing together — user-set via its corner grip
     autoRefresh:"off",   // off | stale | always — default off keeps page load request-free
     lastFetch:"",        // YYYY-MM-DD of the last fully successful macro fetch
     archive:{lastQuarter:"",lastAt:"",salt:"",head:"",count:0},   // nudge + truncation anchor only
@@ -1332,6 +1361,7 @@ function sanitizeState(d){
   const order=(Array.isArray(o.calendarOrder)?o.calendarOrder:[]).filter(x=>x==="personal"||x==="live");
   s.calendarOrder=(order.length===2&&order[0]!==order[1])?order:["personal","live"];
   s.liveCalHeight=clampLiveCal(sNum(o.liveCalHeight,500));
+  s.setMenuScale=clampSetScale(sNum(o.setMenuScale,1));
   s.autoRefresh=sPick(o.autoRefresh,["off","stale","always"],"off");
   s.lastFetch=sStr(o.lastFetch,40);
 
@@ -2368,6 +2398,55 @@ function initLiveCalResize(){
     e.preventDefault();
     state.liveCalHeight=clampLiveCal(tvBox.offsetHeight+step*(e.shiftKey?60:20));
     setLiveCalPx(state.liveCalHeight);
+    save();
+  });
+}
+// Sole writer of --set-scale. Every size inside the ⚙ menu is calc(basePx * var(--set-scale)),
+// so this one property resizes the panel and its text, spacing and swatches together.
+function applySetMenuScale(){
+  const tl=document.getElementById("themeList");
+  if(tl)tl.style.setProperty("--set-scale",String(clampSetScale(state.setMenuScale||1)));
+}
+// Mirrors initLiveCalResize(): drag gives live feedback and saves once on release; each arrow
+// key press saves immediately. The menu is anchored top-right, so it grows DOWN and LEFT — the
+// grip sits bottom-left and dragging it that way grows the menu, so it stays under the pointer.
+// Whichever axis moved further drives the scale; 250px (the menu's base width) of drag is 1.0,
+// so a horizontal drag tracks the menu's left edge almost exactly. Pointer capture keeps a fast
+// drag from losing the grip when the cursor outruns the resizing panel.
+function initSetMenuResize(){
+  const grip=document.getElementById("setMenuResize");
+  if(!grip)return;
+  let startX=0,startY=0,startScale=1,active=false;
+  const set=v=>{state.setMenuScale=clampSetScale(v);applySetMenuScale();};
+  grip.addEventListener("pointerdown",e=>{
+    e.preventDefault();
+    e.stopPropagation();   // keep the menu's outside-click closer out of it
+    active=true;startX=e.clientX;startY=e.clientY;startScale=state.setMenuScale||1;
+    grip.setPointerCapture(e.pointerId);
+    document.body.classList.add("resizing-set");
+  });
+  grip.addEventListener("pointermove",e=>{
+    if(!active)return;
+    const dx=startX-e.clientX, dy=e.clientY-startY;   // both positive = down-left = bigger
+    set(startScale+(Math.abs(dx)>Math.abs(dy)?dx:dy)/250);
+  });
+  const end=e=>{
+    if(!active)return;
+    active=false;
+    if(grip.hasPointerCapture(e.pointerId))grip.releasePointerCapture(e.pointerId);
+    document.body.classList.remove("resizing-set");
+    save();
+  };
+  grip.addEventListener("pointerup",end);
+  grip.addEventListener("pointercancel",end);
+  grip.addEventListener("click",e=>e.stopPropagation());
+  grip.addEventListener("dblclick",e=>{e.stopPropagation();set(1);save();});
+  // Same directions as the drag: Down/Left grow, Up/Right shrink (Down = bigger matches #tvResize)
+  grip.addEventListener("keydown",e=>{
+    const step=(e.key==="ArrowDown"||e.key==="ArrowLeft")?1:(e.key==="ArrowUp"||e.key==="ArrowRight")?-1:0;
+    if(!step)return;
+    e.preventDefault();
+    set((state.setMenuScale||1)+step*(e.shiftKey?0.15:0.05));
     save();
   });
 }
@@ -4327,6 +4406,7 @@ function initChat(){
 /* ---------- boot ---------- */
 function boot(rerender){
   applyTheme(state.theme||"terminal");
+  applySetMenuScale();
   renderThemeList();
   renderAutoRefreshList();
   renderLangList();
@@ -4357,6 +4437,7 @@ function init(){
 
   initCalendarReorder();
   initLiveCalResize();
+  initSetMenuResize();
   initSettingsSections();
   initChat();
 
