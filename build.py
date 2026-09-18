@@ -80,7 +80,42 @@ _secret_re = None
 GENERIC_NAMES = {
     "401(k)", "403(b)", "457", "IRA", "HSA", "FSA", "Car", "Cash", "Crypto",
     "Mortgage", "Savings", "Checking", "Pension", "Bonds", "Home", "House",
+    # multi-word names any household uses — matched case-insensitively as whole phrases
+    "Checking / savings", "Checking account", "Savings account", "Emergency fund",
+    "Primary residence", "Credit card", "Auto loan", "Student loan", "Car loan",
+    "Brokerage account", "Roth IRA", "Traditional IRA", "Money market", "Treasury bills",
+    "Index fund", "Digital assets", "Car / vehicle", "Home equity", "Rent / mortgage",
 }
+_GENERIC_LOWER = {g.lower() for g in GENERIC_NAMES}
+
+
+# Acronyms that are ordinary finance vocabulary, not tickers. Prose fields (notes, calendar
+# entries) contribute only ticker-shaped or digit-bearing tokens, and these are the ticker-shaped
+# words that every build legitimately contains.
+KNOWN_ACRONYMS = {
+    "CPI", "FOMC", "IRA", "HSA", "FSA", "ETF", "ETFS", "USD", "EUR", "GBP", "JPY", "TWD", "CNY",
+    "YOY", "US", "UK", "EU", "APR", "APY", "ATM", "ACH", "IPO", "RSU", "RSUS", "ESPP", "PMI",
+    "HOA", "LLC", "INC", "GDP", "BLS", "FED", "NYSE", "REIT", "REITS", "AGI", "TBD", "EOD", "EOM",
+}
+_TICKER = re.compile(r"^[A-Z]{2,6}(?:\.[A-Z])?$")
+_YEAR_OR_DATE = re.compile(r"^(?:19|20)\d\d(?:-\d\d(?:-\d\d)?)?$")
+
+
+def _identifier_tokens(text):
+    """Tokens of free text that look like identifiers rather than words: tickers, account or
+    contract numbers. Ordinary English is deliberately NOT harvested — a guard that fires on
+    "before" or "close" trains everyone to ignore it."""
+    for tok in re.findall(r"[A-Za-z0-9][A-Za-z0-9.\-]*", text):
+        t = tok.rstrip(".")
+        if _TICKER.match(t) and t not in KNOWN_ACRONYMS and t not in GENERIC_NAMES:
+            yield t
+        elif _YEAR_OR_DATE.match(t):
+            continue
+        else:
+            digits = sum(c.isdigit() for c in t)
+            letters = sum(c.isalpha() for c in t)
+            if digits >= 4 or (digits >= 3 and letters >= 1):
+                yield t
 
 
 def load_leak_terms(public=None):
@@ -94,13 +129,21 @@ def load_leak_terms(public=None):
     if os.path.exists(path):
         with open(path, encoding="utf-8") as fh:
             d = json.load(fh)
+        # Row NAMES are taken whole — a single token as before, a multi-word name as an exact
+        # phrase — because a real account name is the thing that leaked last time. Free text
+        # (notes, calendar entries) and the profile name contribute only identifier-shaped tokens;
+        # see _identifier_tokens() for why prose words are left alone.
         for row in d.get("assets", []) + d.get("liabilities", []) + d.get("goals", []):
             name = (row.get("name") or "").strip()
-            # single tokens only — a multi-word name is prose, matched by structure instead
-            if not name or " " in name or len(name) < 2:
-                continue
-            if name not in GENERIC_NAMES:
+            if len(name) >= 2 and name.lower() not in _GENERIC_LOWER:
                 terms.add(name)
+            terms.update(_identifier_tokens(row.get("notes") or ""))
+        for row in d.get("calendar", []):
+            terms.update(_identifier_tokens(row.get("event") or ""))
+            terms.update(_identifier_tokens(row.get("notes") or ""))
+        who = (d.get("name") or "").strip()
+        if len(who) >= 3 and who.lower() not in _GENERIC_LOWER:
+            terms.add(who)
     _secret_re = (
         re.compile(r"(?<![A-Za-z0-9])(?:%s)(?![A-Za-z0-9])"
                    % "|".join(re.escape(t) for t in sorted(terms)))
@@ -238,7 +281,7 @@ function seed(){
     liabilities:%s,
     history:[],
     yields:[{date:"2026-08-20",y10:4.69,y20:5.05,y30:5.23}],
-    inflation:[{date:"2026-07-31",cpi:3.2,note:"EXAMPLE — replace with latest print"}],
+    inflation:[],   // empty like history — the Macro tab's empty state invites a Refresh
     calendar:%s,
     goals:%s,
     chat:{ack:false,endpoint:"http://127.0.0.1:11434",model:"",messages:[]},

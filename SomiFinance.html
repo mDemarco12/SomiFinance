@@ -30,7 +30,7 @@
 -->
 <meta http-equiv="Content-Security-Policy" content="
   default-src 'none';
-  script-src 'sha256-LEfI6wtiATeJWC0ehfYamH0fHWvD5leT9b99SJsRVXU=' 'sha256-oMCCTeO90ZXcNZLQbBfqtd03wiW0UxyGVLbkU5X74zI=' https://s3.tradingview.com;
+  script-src 'sha256-LEfI6wtiATeJWC0ehfYamH0fHWvD5leT9b99SJsRVXU=' 'sha256-cVnIVemwYSDK9E2HGBEbrISVCtjEiYwCoXEjVEz9tRY=' https://s3.tradingview.com;
   style-src 'unsafe-inline';
   img-src data: https:;
   connect-src https://home.treasury.gov https://api.bls.gov https://open.er-api.com http://127.0.0.1:* http://localhost:*;
@@ -40,11 +40,13 @@
   form-action 'none';">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="description" content="A single-file, offline-first personal net worth and macro dashboard. Runs entirely in your browser; no account, no server.">
+<!-- inline SVG favicon: zero network requests, and img-src already allows data: -->
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230d1015'/%3E%3Ctext x='32' y='45' text-anchor='middle' font-family='ui-monospace,Menlo,Consolas,monospace' font-size='40' font-weight='700' fill='%23e0a83b'%3ES%3C/text%3E%3C/svg%3E">
 <title>SomiFinance</title>
 <style>
   :root{
     --bg:#0d1015; --panel:#141922; --panel-2:#1a212c; --line:#232c39;
-    --ink:#e8e3d6; --muted:#8b94a3; --faint:#5b6472;
+    --ink:#e8e3d6; --muted:#8b94a3; --faint:#778293;
     --amber:#e0a83b; --amber-dim:#8a6a24;
     --up:#4fb477; --down:#e5484d; --blue:#4a90d9; --violet:#9a8cf0; --peach:#d97757;
     /* --cyan is the default brand-name colour. Terminal ships literal #00FFFF; every other
@@ -119,6 +121,14 @@
   .menu-wrap{position:relative}
   .menu-btn{background:var(--panel-2);border:1px solid var(--line);color:var(--ink);padding:7px 13px;border-radius:6px;font-size:13px;cursor:pointer;display:flex;align-items:center;gap:8px;min-width:190px}
   .menu-btn:hover{border-color:var(--amber-dim)}
+  /* phone width: the four actions wrap under the brand/menu row instead of running ~270px off
+     the right edge and forcing the whole page to scroll sideways */
+  @media (max-width:520px){
+    .topbar{flex-wrap:wrap;gap:10px;row-gap:8px;padding:10px 14px}
+    .brand .eyebrow{font-size:9px;letter-spacing:.14em}
+    .menu-btn{min-width:0}
+    .act{padding:6px 10px;font-size:12px}
+  }
   .menu-btn .caret{margin-left:auto;color:var(--muted);transition:transform .15s}
   .menu-btn[aria-expanded="true"] .caret{transform:rotate(180deg)}
   .menu-btn .dot{width:6px;height:6px;border-radius:50%;background:var(--amber)}
@@ -1035,7 +1045,7 @@
   <div class="cp-fine">AI-generated · runs on your machine · read-only · not financial advice</div>
 </div>
 
-<div class="toast" id="toast"></div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
 
 <script>
 /*!
@@ -1061,17 +1071,34 @@
 const KEY="somifinance.v1";
 const LEGACY_KEY="wealthdesk.v1";
 /* @variant:end storage */
-function curInfo(){return CURRENCIES[state.currency]||CURRENCIES.USD;}
-function fxRate(){return (state.fx&&state.fx.rates&&state.fx.rates[state.currency])||1;}
+// Own-property test for allowlist lookups. A bare `TABLE[key]` is truthy for "constructor",
+// so an imported currency:"constructor" would pass sanitize and turn every cell into NaN.
+const own=(o,k)=>typeof k==="string"&&Object.prototype.hasOwnProperty.call(o,k);
+// A missing FX rate must never be mistaken for 1:1 — that renders USD figures under a foreign
+// symbol. When the rate for the selected currency is unknown, everything falls back to USD
+// (symbol, decimals, rate) and renderTape()/renderCurList() say so.
+function fxRateKnown(){return state.currency==="USD"||!!(state.fx&&state.fx.rates&&state.fx.rates[state.currency]>0);}
+function curInfo(){return fxRateKnown()?(CURRENCIES[state.currency]||CURRENCIES.USD):CURRENCIES.USD;}
+function fxRate(){return fxRateKnown()&&state.currency!=="USD"?state.fx.rates[state.currency]:1;}
 // editable-cell round trip: state always stores USD; these convert only at the display/edit boundary
 function toDisplay(usd){const d=curInfo().decimals,p=Math.pow(10,d);return Math.round((+usd||0)*fxRate()*p)/p;}
-function fromDisplay(v){return (parseFloat(v)||0)/fxRate();}
+// Accepts what people actually type — "1,250.50", "$3,000", "NT$1 200" — and returns null for
+// anything that isn't a finite number ("abc", "1e999") so the caller keeps the previous value
+// instead of silently writing 0 or Infinity. An emptied cell is an explicit 0.
+function fromDisplay(v){
+  const t=String(v==null?"":v).trim();
+  if(t==="")return 0;
+  const n=parseFloat(t.replace(/[^0-9.eE+-]/g,""));
+  return Number.isFinite(n)?n/fxRate():null;
+}
 const fmt=n=>{const c=curInfo(),v=n*fxRate();return (v<0?"-":"")+c.symbol+Math.abs(Math.round(v)).toLocaleString();};
 const fmt2=n=>{const c=curInfo(),v=n*fxRate();return (v<0?"-":"")+c.symbol+Math.abs(v).toLocaleString(undefined,{minimumFractionDigits:c.decimals,maximumFractionDigits:c.decimals});};
 // chart tick formatters — datasets stay in USD always, only the tick label converts at render time
 const tickMoney=v=>curInfo().symbol+((+v)*fxRate()).toLocaleString(undefined,{maximumFractionDigits:0});
 const tickMoneyK=v=>curInfo().symbol+((+v)*fxRate()/1000).toFixed(0)+"k";
-const today=()=>new Date().toISOString().slice(0,10);
+// LOCAL calendar date. toISOString() is UTC, which stamped tomorrow's date on every snapshot,
+// calendar row and export filename for evening users west of Greenwich.
+const today=()=>{const d=new Date();return new Date(d.getTime()-d.getTimezoneOffset()*6e4).toISOString().slice(0,10);};
 // Quarters have two forms, kept apart on purpose. Stored: "2026-Q3" — sortable, unambiguous,
 // century-proof; this is what goes in an archive file. Displayed: "Q3 26", standard finance
 // shorthand. Never store the display form.
@@ -1143,7 +1170,7 @@ const CAT_COLOR={Brokerage:"var(--blue)",Cash:"var(--up)",Retirement:"var(--viol
   Property:"var(--peach)"};
 const CAT_PALETTE=["var(--blue)","var(--violet)","var(--peach)","var(--up)","var(--down)","var(--amber)"];
 function colorForCat(c){
-  if(CAT_COLOR[c])return CAT_COLOR[c];
+  if(own(CAT_COLOR,c))return CAT_COLOR[c];
   let h=0;for(let i=0;i<c.length;i++)h=(h*31+c.charCodeAt(i))>>>0;
   return CAT_PALETTE[h%CAT_PALETTE.length];
 }
@@ -1190,7 +1217,7 @@ function seed(){
     liabilities:[],
     history:[],
     yields:[{date:"2026-08-20",y10:4.69,y20:5.05,y30:5.23}],
-    inflation:[{date:"2026-07-31",cpi:3.2,note:"EXAMPLE — replace with latest print"}],
+    inflation:[],   // empty like history — the Macro tab's empty state invites a Refresh
     calendar:[
       {id:uid(),date:"2026-09-04",event:"Nonfarm payrolls (Aug)",imp:"High",notes:"verify date"},
       {id:uid(),date:"2026-09-10",event:"CPI (Aug)",imp:"High",notes:"verify date"},
@@ -1315,6 +1342,12 @@ const sStr=(v,max=MAX_STR)=>typeof v==="string"?v.slice(0,max):"";
 const sNum=(v,dflt=0)=>{const n=typeof v==="number"?v:parseFloat(v);return Number.isFinite(n)?n:dflt;};
 const sNumN=v=>{const n=typeof v==="number"?v:parseFloat(v);return Number.isFinite(n)?n:null;};
 const sArr=v=>Array.isArray(v)?v.slice(0,MAX_ROWS):[];
+// Dated series are append-only, so past the cap it is the OLDEST rows that go — sArr() would
+// drop the newest snapshot on every reload once history passed 1000 points. Sorted by date
+// first, so a backup written in any order still keeps its newest rows (and snapshot()'s
+// "is the last row today?" check sees the true latest point).
+const sTail=v=>Array.isArray(v)?[...v].sort((a,b)=>String(a&&a.date||"")<String(b&&b.date||"")?-1:1).slice(-MAX_ROWS):[];
+const capTail=a=>{if(a.length>MAX_ROWS)a.splice(0,a.length-MAX_ROWS);};
 const sPick=(v,allowed,dflt)=>allowed.includes(v)?v:dflt;
 const sDate=v=>/^\d{4}-\d{2}-\d{2}$/.test(v)?v:today();
 // Optional date: falls back to "" rather than today(). A goal with no deadline is a normal
@@ -1343,11 +1376,11 @@ function sanitizeState(d){
   s.onboarded=o.onboarded===true;
   s.hintsDone=o.hintsDone===true;
   const p=(o.profile&&typeof o.profile==="object")?o.profile:{};
-  s.profile={name:sStr(p.name,40),goal:GOALS[p.goal]?p.goal:"personal",
+  s.profile={name:sStr(p.name,40),goal:own(GOALS,p.goal)?p.goal:"personal",
     nameColor:sPick(p.nameColor,NAME_COLOR_IDS,"cyan")};
-  s.theme=THEMES[o.theme]?o.theme:"terminal";
-  s.lang=LANGS[o.lang]?o.lang:"en";
-  s.currency=CURRENCIES[o.currency]?o.currency:"USD";
+  s.theme=own(THEMES,o.theme)?o.theme:"terminal";
+  s.lang=own(LANGS,o.lang)?o.lang:"en";
+  s.currency=own(CURRENCIES,o.currency)?o.currency:"USD";
 
   const fx=(o.fx&&typeof o.fx==="object")?o.fx:{};
   const rates={USD:1};
@@ -1380,11 +1413,11 @@ function sanitizeState(d){
     value:sNum(r&&r.value),notes:sStr(r&&r.notes)});
   s.assets=sArr(o.assets).map(holding);
   s.liabilities=sArr(o.liabilities).map(holding);
-  s.history=sArr(o.history).map(h=>({date:sDate(h&&h.date),net:sNum(h&&h.net),
+  s.history=sTail(o.history).map(h=>({date:sDate(h&&h.date),net:sNum(h&&h.net),
     assets:sNum(h&&h.assets),liab:sNum(h&&h.liab)}));
-  s.yields=sArr(o.yields).map(y=>({date:sDate(y&&y.date),y10:sNumN(y&&y.y10),
+  s.yields=sTail(o.yields).map(y=>({date:sDate(y&&y.date),y10:sNumN(y&&y.y10),
     y20:sNumN(y&&y.y20),y30:sNumN(y&&y.y30)}));
-  s.inflation=sArr(o.inflation).map(i=>({date:sDate(i&&i.date),cpi:sNumN(i&&i.cpi),
+  s.inflation=sTail(o.inflation).map(i=>({date:sDate(i&&i.date),cpi:sNumN(i&&i.cpi),
     note:sStr(i&&i.note)}));
   s.calendar=sArr(o.calendar).map(e=>({id:uid(),date:sDate(e&&e.date),event:sStr(e&&e.event),
     imp:sPick(e&&e.imp,["High","Med","Low","Personal"],"Med"),notes:sStr(e&&e.notes)}));
@@ -1427,8 +1460,8 @@ function sanitizeState(d){
       income:Array.isArray(o.budget.income)?sArr(o.budget.income).map(bIn):s.budget.income,
       expenses:Array.isArray(o.budget.expenses)?sArr(o.budget.expenses).map(bEx):s.budget.expenses,
       assumptions:{
-        rate:Math.max(0,Math.min(100,sNum(a.rate,7))),
-        years:Math.max(1,Math.min(100,Math.round(sNum(a.years,30))))
+        rate:clampRate(a.rate),
+        years:clampYears(a.years)
       }
     };
   }
@@ -1453,7 +1486,20 @@ function load(){
 function save(){
   if(!canPersist)return;
   try{localStorage.setItem(KEY,JSON.stringify(state));}
-  catch(e){canPersist=false;toast("Couldn't save to this browser — export your data to keep it.");}
+  catch(e){
+    canPersist=false;
+    toast("Couldn't save to this browser — export your data to keep it.");
+    // a 2.6s toast is not enough notice that every edit from here on is lost on reload
+    renderFoot();showSaveBlocked();
+  }
+}
+function showSaveBlocked(){
+  const b=document.getElementById("updateBanner"),t=document.getElementById("bannerTxt");
+  if(!b||!t)return;
+  t.innerHTML="<b>Saving is blocked in this browser</b> — storage is full, or this is a private window. "+
+    "Edits you make now will be lost on reload. <b>Export</b> to keep them.";
+  document.getElementById("bannerGo").hidden=true;
+  b.hidden=false;
 }
 
 /* ---------- calcs ---------- */
@@ -1463,7 +1509,7 @@ const totalLiab=()=>sum(state.liabilities);
 const netWorth=()=>totalAssets()-totalLiab();
 // Driven by CAT_META, not by category names, so a goal that renames its categories keeps these
 // tiles meaningful. meta() tolerates an unmapped category — it just contributes to neither.
-const meta=c=>CAT_META[c]||{};
+const meta=c=>own(CAT_META,c)?CAT_META[c]:{};
 const sumAssets=pred=>state.assets.filter(pred).reduce((s,a)=>s+(+a.value||0),0);
 const invested=()=>sumAssets(a=>meta(a.cat).group==="invested");
 const cash=()=>sumAssets(a=>meta(a.cat).group==="cash");
@@ -1485,18 +1531,20 @@ const savingsRate=()=>{const i=totalCashIn();return i>0?netCashFlow()/i*100:null
 // Asset allocation: [cat,value] rows, biggest first, zeroes dropped. Groups by whatever string
 // is in a.cat — see renderOverview()'s note about categories outside the active goal's set.
 const allocByCat=()=>{
-  const by={};
+  const by=Object.create(null);   // a category named "__proto__" must be a key, not a prototype write
   state.assets.forEach(a=>{by[a.cat]=(by[a.cat]||0)+(+a.value||0);});
   return Object.entries(by).filter(([,v])=>v>0).sort((a,b)=>b[1]-a[1]);
 };
 // Budget spend vs limit: [cat,{spent,limit}] rows, biggest spend first.
 const spendByCat=()=>{
-  const by={};
+  const by=Object.create(null);
   state.budget.expenses.forEach(e=>{
     const c=e.cat||"Other";
-    if(!by[c])by[c]={spent:0,limit:0};
+    if(!by[c])by[c]={spent:0,limit:0,unlimited:false};
     by[c].spent+=(+e.amount||0);
-    by[c].limit+=(+e.limit||0);
+    // limit 0 means "no limit" on a row (budgetRowHTML, renderSpendChart agree) — so a category
+    // holding any unlimited row can't be "over": its spend would be measured against a partial cap
+    if(+e.limit>0)by[c].limit+=(+e.limit);else by[c].unlimited=true;
   });
   return Object.entries(by).filter(([,v])=>v.spent>0||v.limit>0).sort((a,b)=>b[1].spent-a[1].spent);
 };
@@ -1672,30 +1720,32 @@ function applyChromeI18n(){
 /* ---------- themes ---------- */
 // token order: bg, panel, panel-2, line, ink, muted, faint, accent, accent-dim,
 //              up, down, blue, violet, peach, cyan, tape-bg
+// --faint / --muted are tuned so .note, .empty and notes cells clear WCAG 4.5:1 on both --bg and
+// --panel in every theme (Latte was 1.97:1). Re-run the contrast check before changing them.
 const THEMES={
   terminal:{name:"Terminal",sub:"default · amber on ink",vars:{
     bg:"#0d1015","panel":"#141922","panel-2":"#1a212c",line:"#232c39",ink:"#e8e3d6",
-    muted:"#8b94a3",faint:"#5b6472",amber:"#e0a83b","amber-dim":"#8a6a24",
+    muted:"#8b94a3",faint:"#778293",amber:"#e0a83b","amber-dim":"#8a6a24",
     up:"#4fb477",down:"#e5484d",blue:"#4a90d9",violet:"#9a8cf0",peach:"#d97757",
     cyan:"#00FFFF","tape-bg":"#0a0d12"}},
   mocha:{name:"Catppuccin Mocha",sub:"dark · mauve accent",vars:{
     bg:"#181825","panel":"#1e1e2e","panel-2":"#313244",line:"#45475a",ink:"#cdd6f4",
-    muted:"#a6adc8",faint:"#6c7086",amber:"#cba6f7","amber-dim":"#7f849c",
+    muted:"#a6adc8",faint:"#83869b",amber:"#cba6f7","amber-dim":"#7f849c",
     up:"#a6e3a1",down:"#f38ba8",blue:"#89b4fa",violet:"#b4befe",peach:"#fab387",
     cyan:"#89dceb","tape-bg":"#11111b"}},
   macchiato:{name:"Catppuccin Macchiato",sub:"dark · mauve accent",vars:{
     bg:"#1e2030","panel":"#24273a","panel-2":"#363a4f",line:"#494d64",ink:"#cad3f5",
-    muted:"#a5adcb",faint:"#6e738d",amber:"#c6a0f6","amber-dim":"#8087a2",
+    muted:"#a5adcb",faint:"#8a8ea4",amber:"#c6a0f6","amber-dim":"#8087a2",
     up:"#a6da95",down:"#ed8796",blue:"#8aadf4",violet:"#b7bdf8",peach:"#f5a97f",
     cyan:"#91d7e3","tape-bg":"#181926"}},
   frappe:{name:"Catppuccin Frappé",sub:"dark · mauve accent",vars:{
     bg:"#292c3c","panel":"#303446","panel-2":"#414559",line:"#51576d",ink:"#c6d0f5",
-    muted:"#a5adce",faint:"#737994",amber:"#ca9ee6","amber-dim":"#838ba7",
+    muted:"#a5adce",faint:"#979cb0",amber:"#ca9ee6","amber-dim":"#838ba7",
     up:"#a6d189",down:"#e78284",blue:"#8caaee",violet:"#babbf1",peach:"#ef9f76",
     cyan:"#99d1db","tape-bg":"#232634"}},
   latte:{name:"Catppuccin Latte",sub:"light · mauve accent",vars:{
     bg:"#dce0e8","panel":"#eff1f5","panel-2":"#e6e9ef",line:"#ccd0da",ink:"#4c4f69",
-    muted:"#6c6f85",faint:"#9ca0b0",amber:"#8839ef","amber-dim":"#8c8fa1",
+    muted:"#595c70",faint:"#5e6376",amber:"#8839ef","amber-dim":"#8c8fa1",
     up:"#40a02b",down:"#d20f39",blue:"#1e66f5",violet:"#7287fd",peach:"#fe640b",
     cyan:"#179299","tape-bg":"#e6e9ef"}}
 };
@@ -1715,7 +1765,9 @@ const P=()=>({accent:css("--amber"),blue:css("--blue"),peach:css("--peach"),
   up:css("--up"),down:css("--down"),violet:css("--violet"),ink:css("--ink")});
 function baseOpts(extra={}){
   const g=CH_GRID(),tk=CH_TICK();
-  return Object.assign({responsive:true,maintainAspectRatio:false,
+  // the intro wipe and the tape already honour reduced-motion; charts should too
+  const still=window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  return Object.assign({responsive:true,maintainAspectRatio:false,animation:still?false:undefined,
     interaction:{mode:"index",intersect:false},
     plugins:{legend:{display:true,labels:{color:P().ink,font:{family:"ui-monospace,monospace",size:11},boxWidth:10,boxHeight:10,usePointStyle:true}}},
     scales:{
@@ -1747,7 +1799,7 @@ function renderOverview(){
   const h=state.history;
   const dEl=document.getElementById("nwDelta"),sEl=document.getElementById("nwSince");
   if(h.length>=1){
-    const prev=h[h.length-1];
+    const prev=prevSnapshot();
     const d=nw-prev.net;
     dEl.textContent=(d>=0?"▲ ":"▼ ")+fmt(Math.abs(d));
     dEl.className="delta tnum "+(d>=0?"up":"down");
@@ -1837,7 +1889,7 @@ function rowHTML(item,cats,kind){
     <td><select class="cell" data-f="cat">${opts}</select></td>
     <td>${cellInput(toDisplay(item.value),"num",'',`data-f="value" inputmode="decimal"`)}</td>
     <td>${cellInput(item.notes,"","","data-f=\"notes\"")}</td>
-    <td><button class="del" title="Delete row">✕</button></td></tr>`;
+    <td><button class="del" title="Delete row" aria-label="Delete row">✕</button></td></tr>`;
 }
 function wireCells(){
   document.querySelectorAll("#assetBody tr, #liabBody tr").forEach(tr=>{
@@ -1848,7 +1900,12 @@ function wireCells(){
     tr.querySelectorAll("[data-f]").forEach(el=>{
       const f=el.dataset.f;
       el.addEventListener("change",()=>{
-        item[f]=f==="value"?fromDisplay(el.value):el.value;
+        if(f==="value"){
+          const n=fromDisplay(el.value);
+          if(n==null){el.value=toDisplay(item.value);toast("That isn't a number — kept the previous value.");return;}
+          item.value=n;
+          state.updated=today();   // the stale-data banner counts from the last ledger edit, not only from snapshots
+        }else item[f]=el.value;
         save();
         document.getElementById("assetTotal").textContent=fmt2(totalAssets());
         document.getElementById("liabTotal").textContent=fmt2(totalLiab());
@@ -1882,7 +1939,7 @@ function budgetRowHTML(item,section){
     <td>${cellInput(toDisplay(item.amount),"num"+(over?" over-limit":""),"",'data-bf="amount" inputmode="decimal"')}</td>
     ${limitCell}${kindCell}
     <td>${cellInput(item.notes,"","",'data-bf="notes"')}</td>
-    <td><button class="del" title="Delete row">✕</button></td></tr>`;
+    <td><button class="del" title="Delete row" aria-label="Delete row">✕</button></td></tr>`;
 }
 function renderBudget(){
   ["income","expense"].forEach(section=>{
@@ -1945,7 +2002,7 @@ function goalRowHTML(g){
     <td><input class="cell" type="date" value="${esc(g.targetDate)}" data-gf="targetDate"></td>
     <td><span class="g-bar"><i style="width:${pct.toFixed(1)}%;background:${colorForCat(g.fundedBy)}"></i></span>
       <span class="g-sub">${fmt(saved)} / ${fmt(target)} · ${pct.toFixed(0)}%${eta}</span></td>
-    <td><button class="del" title="Delete row">✕</button></td></tr>`;
+    <td><button class="del" title="Delete row" aria-label="Delete row">✕</button></td></tr>`;
 }
 function renderGoals(){
   const body=document.getElementById("goalBody");
@@ -1966,7 +2023,11 @@ function wireGoalRows(){
     tr.querySelectorAll("[data-gf]").forEach(el=>{
       const f=el.dataset.gf,numeric=f==="target"||f==="monthly";
       el.addEventListener("change",()=>{
-        g[f]=numeric?fromDisplay(el.value):el.value;
+        if(numeric){
+          const n=fromDisplay(el.value);
+          if(n==null){el.value=toDisplay(g[f]);toast("That isn't a number — kept the previous value.");return;}
+          g[f]=n;
+        }else g[f]=el.value;
         save();renderGoals();
       });
       if(numeric)el.addEventListener("blur",()=>{if(el.value!=="")el.value=toDisplay(g[f]);});
@@ -1999,7 +2060,11 @@ function wireBudgetRows(){
       const f=el.dataset.bf;
       const numeric=f==="amount"||f==="limit";
       el.addEventListener("change",()=>{
-        item[f]=numeric?fromDisplay(el.value):el.value;
+        if(numeric){
+          const n=fromDisplay(el.value);
+          if(n==null){el.value=toDisplay(item[f]);toast("That isn't a number — kept the previous value.");return;}
+          item[f]=n;
+        }else item[f]=el.value;
         save();
         tr.classList.toggle("dim",!!item.optional&&!(+item.amount));
         if(section!=="income"){
@@ -2085,14 +2150,14 @@ function renderSpendChart(){
     note.innerHTML="Enter monthly amounts and limits in the table above to compare spend against budget.";
     return;
   }
-  const over=rows.filter(([,v])=>v.limit>0&&v.spent>v.limit);
+  const over=rows.filter(([,v])=>v.limit>0&&!v.unlimited&&v.spent>v.limit);
   note.innerHTML=over.length
     ? `<b style="color:${pal.down}">Over limit:</b> ${over.map(([c])=>esc(c)).join(", ")}.`
     : "Every category with a limit set is within budget.";
   const g=CH_GRID(),tk=CH_TICK();
   bars("spendChart",rows.map(([c])=>c),[
     {label:"Spent",data:rows.map(([,v])=>v.spent),
-      backgroundColor:rows.map(([,v])=>(v.limit>0&&v.spent>v.limit)?pal.down:pal.blue),
+      backgroundColor:rows.map(([,v])=>(v.limit>0&&!v.unlimited&&v.spent>v.limit)?pal.down:pal.blue),
       borderWidth:0,borderRadius:3},
     {label:"Limit",data:rows.map(([,v])=>v.limit),
       backgroundColor:pal.accent+"55",borderColor:pal.accent,borderWidth:1,borderRadius:3}
@@ -2110,22 +2175,26 @@ function futureValue(pmt,annualPct,years){
   if(!i)return pmt*n;
   return pmt*((Math.pow(1+i,n)-1)/i);
 }
+// One clamp shared by sanitizeState(), the chart and the two inputs — they used to disagree
+// (60 vs 100 years), so an imported value could show one horizon and plot another.
+const clampYears=y=>{const n=Math.round(+y);return Number.isFinite(n)?Math.max(1,Math.min(60,n)):30;};
+const clampRate=r=>{const n=+r;return Number.isFinite(n)?Math.max(0,Math.min(100,n)):7;};
 function renderFutureChart(){
   const pal=P();
   const a=state.budget.assumptions;
   const pmt=discretionaryMonthly();
-  const years=Math.max(1,Math.min(60,+a.years||30));
-  const fv=futureValue(pmt,a.rate,years);
+  const years=clampYears(a.years),rate=clampRate(a.rate);
+  const fv=futureValue(pmt,rate,years);
   const contributed=pmt*12*years;
   document.getElementById("futureReads").innerHTML=
     `<div class="read"><span class="rl">Discretionary / mo</span><span class="rv" style="color:${pal.peach}">${fmt(pmt)}</span><span class="rd">across ${state.budget.expenses.filter(e=>e.kind==="discretionary").length} categories</span></div>`+
-    `<div class="read"><span class="rl">If invested instead</span><span class="rv" style="color:${pal.up}">${fmt(fv)}</span><span class="rd">${years}yr @ ${(+a.rate||0)}%</span></div>`+
+    `<div class="read"><span class="rl">If invested instead</span><span class="rv" style="color:${pal.up}">${fmt(fv)}</span><span class="rd">${years}yr @ ${rate}%</span></div>`+
     `<div class="read"><span class="rl">Growth forgone</span><span class="rv" style="color:${pal.violet}">${fmt(fv-contributed)}</span><span class="rd">beyond the ${fmt(contributed)} spent</span></div>`;
   const labels=[],diverted=[],invested=[];
   for(let y=0;y<=years;y++){
     labels.push(y===0?"now":y+"yr");
     diverted.push(pmt*12*y);
-    invested.push(futureValue(pmt,a.rate,y));
+    invested.push(futureValue(pmt,rate,y));
   }
   line("futureChart",labels,[
     mk("If invested instead",invested,pal.up),
@@ -2148,8 +2217,8 @@ function renderMacro(){
   if(last){
     document.getElementById("yieldReads").innerHTML=
       [["10-year",last.y10,pal.blue],["20-year",last.y20,pal.accent],["30-year",last.y30,pal.peach]]
-      .map(([l,v,c])=>`<div class="read"><span class="rl">${l}</span><span class="rv" style="color:${c}">${v!=null?(+v).toFixed(2)+"%":"—"}</span><span class="rd">as of ${last.date}</span></div>`).join("");
-  }
+      .map(([l,v,c])=>`<div class="read"><span class="rl">${l}</span><span class="rv" style="color:${c}">${v!=null?(+v).toFixed(2)+"%":"—"}</span><span class="rd">as of ${esc(last.date)}</span></div>`).join("");
+  }else document.getElementById("yieldReads").innerHTML="";
   line("yieldChart",y.map(p=>p.date),[
     mk("10yr",y.map(p=>p.y10),pal.blue),
     mk("20yr",y.map(p=>p.y20),pal.accent),
@@ -2159,18 +2228,18 @@ function renderMacro(){
   const inf=[...state.inflation].sort((a,b)=>a.date<b.date?-1:1);
   const li=inf[inf.length-1];
   document.getElementById("infReads").innerHTML=li?
-    `<div class="read"><span class="rl">CPI YoY</span><span class="rv" style="color:${pal.down}">${(+li.cpi).toFixed(2)}%</span><span class="rd">as of ${li.date}${li.note?" · "+esc(li.note):""}</span></div>`:"";
+    `<div class="read"><span class="rl">CPI YoY</span><span class="rv" style="color:${pal.down}">${(+li.cpi).toFixed(2)}%</span><span class="rd">as of ${esc(li.date)}${li.note?" · "+esc(li.note):""}</span></div>`:"";
   line("infChart",inf.map(p=>p.date),[mk("CPI YoY",inf.map(p=>p.cpi),pal.down)],
     baseOpts({plugins:{legend:{display:false}},scales:{x:baseOpts().scales.x,y:pctY()}}));
 
   // real yield = 10yr nominal - nearest CPI
   const real=y.map(p=>{
-    const match=inf.filter(i=>i.date<=p.date).pop()||inf[0];
+    const match=inf.filter(i=>i.date<=p.date).pop();   // no CPI print before this yield → no real yield for it
     return match&&p.y10!=null?{date:p.date,v:+(p.y10-match.cpi).toFixed(2)}:null;
   }).filter(Boolean);
   const lastReal=real[real.length-1];
   document.getElementById("realReads").innerHTML=lastReal?
-    `<div class="read"><span class="rl">Real 10yr</span><span class="rv" style="color:${lastReal.v>=0?pal.up:pal.down}">${lastReal.v.toFixed(2)}%</span><span class="rd">as of ${lastReal.date}</span></div>`:"";
+    `<div class="read"><span class="rl">Real 10yr</span><span class="rv" style="color:${lastReal.v>=0?pal.up:pal.down}">${lastReal.v.toFixed(2)}%</span><span class="rd">as of ${esc(lastReal.date)}</span></div>`:"";
   line("realChart",real.map(p=>p.date),[mk("Real yield (10yr − CPI)",real.map(p=>p.v),pal.up)],
     baseOpts({plugins:{legend:{display:false}},scales:{x:baseOpts().scales.x,y:pctY()}}));
 }
@@ -2206,6 +2275,8 @@ async function fetchLatestCPI(){
   const priorYear=withVal.find(d=>d.period===latest.period&&(+d.year)===(+latest.year)-1);
   if(!priorYear)throw new Error("Not enough history to compute YoY CPI");
   const yoy=((+latest.value)/(+priorYear.value)-1)*100;
+  // M13 is BLS's annual average; Date.UTC(y,13,0) would file it under next January
+  if(!/^M(0[1-9]|1[0-2])$/.test(latest.period)||!Number.isFinite(yoy))throw new Error("Unexpected CPI period or value");
   const month=String(+latest.period.slice(1)).padStart(2,"0");
   const date=new Date(Date.UTC(+latest.year,+month,0)).toISOString().slice(0,10);
   return{date,cpi:+yoy.toFixed(2)};
@@ -2219,15 +2290,17 @@ async function refreshMacroData(auto){
   const[yieldRes,cpiRes]=await Promise.allSettled([fetchTreasuryYields(),fetchLatestCPI()]);
   let ok=0;
   if(yieldRes.status==="fulfilled"){
-    const r=yieldRes.value;
+    // fetched values get the same coercion an import does before they touch state
+    const r={date:sDate(yieldRes.value.date),y10:sNumN(yieldRes.value.y10),y20:sNumN(yieldRes.value.y20),y30:sNumN(yieldRes.value.y30)};
     state.yields=state.yields.filter(p=>p.date!==r.date);
-    state.yields.push({date:r.date,y10:r.y10,y20:r.y20,y30:r.y30});
+    state.yields.push(r);capTail(state.yields);
     ok++;
   }else console.warn("Treasury fetch failed:",yieldRes.reason);
   if(cpiRes.status==="fulfilled"){
-    const r=cpiRes.value;
+    const r={date:sDate(cpiRes.value.date),cpi:sNumN(cpiRes.value.cpi)};
+    const old=state.inflation.find(p=>p.date===r.date);   // a re-fetch must not erase the user's note
     state.inflation=state.inflation.filter(p=>p.date!==r.date);
-    state.inflation.push({date:r.date,cpi:r.cpi});
+    state.inflation.push(old&&old.note?{...r,note:old.note}:r);capTail(state.inflation);
     ok++;
   }else console.warn("BLS fetch failed:",cpiRes.reason);
   // stamp only on FULL success, so a partial failure retries on the next load
@@ -2273,8 +2346,8 @@ async function refreshFx(){
   }
 }
 function maybeRefreshFx(){
-  if(state.currency==="USD"||state.fx.lastFetch===today())return;
-  refreshFx().then(ok=>{if(ok){renderTape();renderTab(currentTab);}});
+  if(state.currency==="USD"||(state.fx.lastFetch===today()&&fxRateKnown()))return;
+  refreshFx().then(ok=>{if(ok){renderTape();renderTab(currentTab);renderCurList();setSectionCurrent();}});
 }
 
 /* ---------- calendar drag-to-reorder ---------- */
@@ -2505,7 +2578,7 @@ function renderCalendar(){
       <td>${cellInput(e.event,"","","data-cf=\"event\"")}</td>
       <td><select class="cell" data-cf="imp">${impOpts}</select></td>
       <td>${cellInput(e.notes,"","","data-cf=\"notes\"")}</td>
-      <td><button class="del">✕</button></td></tr>`;
+      <td><button class="del" title="Delete row" aria-label="Delete row">✕</button></td></tr>`;
   }).join("")||`<tr><td colspan="5"><div class="empty">No events. Add the next CPI or FOMC date.</div></td></tr>`;
   body.querySelectorAll("tr").forEach(tr=>{
     const id=tr.dataset.id;if(!id)return;
@@ -2527,7 +2600,7 @@ function renderTape(){
   const real=(y.y10!=null&&inf.cpi!=null)?(y.y10-inf.cpi).toFixed(2):null;
   const nw=netWorth(),h=state.history;
   let nwCls="amb",nwExtra="";
-  if(h.length){const d=nw-h[h.length-1].net;nwCls=d>=0?"up":"down";nwExtra=(d>=0?" ▲":" ▼")+fmt(Math.abs(d));}
+  if(h.length){const d=nw-prevSnapshot().net;nwCls=d>=0?"up":"down";nwExtra=(d>=0?" ▲":" ▼")+fmt(Math.abs(d));}
   const items=[
     ["NET WORTH",fmt(nw)+nwExtra,nwCls],
     ["INVESTED",fmt(invested()),""],
@@ -2537,8 +2610,9 @@ function renderTape(){
     ["20Y",y.y20!=null?y.y20.toFixed(2)+"%":"—","amb"],
     ["30Y",y.y30!=null?y.y30.toFixed(2)+"%":"—","amb"],
     ["CPI",inf.cpi!=null?inf.cpi.toFixed(2)+"%":"—","down"],
-    ["REAL 10Y",real!=null?real+"%":"—",real>=0?"up":"down"]
+    ["REAL 10Y",real!=null?real+"%":"—",real==null?"amb":(+real>=0?"up":"down")]
   ];
+  if(!fxRateKnown())items.unshift(["FX","rate unavailable — figures shown in USD","down"]);
   const one=items.map(([l,v,c])=>`<span class="tick"><span class="lbl">${l}</span><span class="val ${c}">${v}</span></span>`).join("");
   document.getElementById("tape").innerHTML=one+one; // doubled for seamless loop
 }
@@ -2631,7 +2705,7 @@ function setSectionCurrent(){
   const m=AUTO_MODES.find(x=>x[0]===(state.autoRefresh||"off"));
   document.getElementById("shCurAuto").textContent=m?m[1]:"Off";
   document.getElementById("shCurLang").textContent=(LANGS[state.lang]||LANGS.en).name;
-  document.getElementById("shCurCur").textContent=state.currency||"USD";
+  document.getElementById("shCurCur").textContent=(state.currency||"USD")+(fxRateKnown()?"":" · shown in USD");
   const g=GOALS[state.profile&&state.profile.goal]||GOALS.personal;
   document.getElementById("shCurGoal").textContent=g.label;
   const nm=((state.profile&&state.profile.name)||"").trim();
@@ -2756,9 +2830,9 @@ function renderLangList(){
 function renderCurList(){
   const cur=state.currency||"USD";
   document.getElementById("curItems").innerHTML=Object.entries(CURRENCIES).map(([id,c])=>{
-    const stale=id!=="USD"&&!state.fx.lastFetch;
+    const noRate=id!=="USD"&&!(state.fx.rates&&state.fx.rates[id]>0);
     return `<button class="theme-opt" role="menuitemradio" data-cur="${id}" aria-current="${id===cur}">
-      <span class="tn">${id} — ${c.name}${stale?" <small>(est.)</small>":""}<small>${c.symbol}</small></span>
+      <span class="tn">${id} — ${c.name}${noRate?" <small>(rate unavailable — shown in USD)</small>":""}<small>${c.symbol}</small></span>
       <span class="chk">✓</span></button>`;
   }).join("");
   document.querySelectorAll("[data-cur]").forEach(b=>b.addEventListener("click",async()=>{
@@ -2771,8 +2845,8 @@ function renderCurList(){
     renderTape();renderTab(currentTab);
     renderCurList();
     closeThemeMenu();
-    if(state.currency!=="USD"&&!fxOk&&!state.fx.lastFetch){
-      toast("Couldn't fetch live FX rates — showing estimated/cached rates.");
+    if(state.currency!=="USD"&&!fxRateKnown()){
+      toast("Couldn't fetch an exchange rate — figures stay in USD until one is available.");
     }else{
       toast(CURRENCIES[state.currency].name+" selected");
     }
@@ -2785,8 +2859,15 @@ function snapshot(){
   const t=today();
   const h=state.history;
   if(h.length&&h[h.length-1].date===t){h[h.length-1]={date:t,net:nw,assets:totalAssets(),liab:totalLiab()};}
-  else{h.push({date:t,net:nw,assets:totalAssets(),liab:totalLiab()});}
+  else{h.push({date:t,net:nw,assets:totalAssets(),liab:totalLiab()});capTail(h);}
   state.updated=t;save();
+}
+// The point to measure "since" against: the newest snapshot NOT taken today. Comparing against
+// today's own point made every Refresh read "▲ $0 since <today>" for the rest of the day.
+function prevSnapshot(){
+  const h=state.history,t=today();
+  for(let i=h.length-1;i>=0;i--)if(h[i].date!==t)return h[i];
+  return h.length?h[h.length-1]:null;
 }
 
 /* ---------- quarterly archive ----------
@@ -3276,6 +3357,7 @@ function importJSON(file){
       normalizeBudget();normalizeAddons();
       boot(true);
       save();
+      maybeRefreshFx();   // boot(true) skips network on purpose; a non-USD backup still needs a live rate
       toast("Imported "+(file.name||"backup"));
     }catch(e){
       state=prev;
@@ -3289,7 +3371,7 @@ function importJSON(file){
 /* ---------- banner (prompt to update) ---------- */
 function maybeBanner(){
   const b=document.getElementById("updateBanner");
-  const days=(Date.now()-new Date(state.updated).getTime())/864e5;
+  const days=(new Date(today()).getTime()-new Date(state.updated).getTime())/864e5;   // both UTC-midnight parses of civil dates
   const noSnaps=state.history.length===0;
   // an empty ledger has no values to "confirm" — a fresh install needs to be told to add one first
   const noAssets=state.assets.length===0;
@@ -3313,16 +3395,8 @@ function renderFoot(){
 }
 
 /* ---------- intro animation ---------- */
-// Set to true if you'd rather see it once per browser tab instead of every load.
-const INTRO_ONCE_PER_SESSION=false;
 function playIntro(){
   if(window.matchMedia("(prefers-reduced-motion: reduce)").matches)return;
-  if(INTRO_ONCE_PER_SESSION){
-    try{
-      if(sessionStorage.getItem("somifinance.intro"))return;
-      sessionStorage.setItem("somifinance.intro","1");
-    }catch(e){}
-  }
   document.body.classList.add("intro-run");
   const bar=document.createElement("div");
   bar.className="intro-wipe";
@@ -3713,7 +3787,7 @@ function chatContext(){
     lines.push("Goals: none set yet.");
   }else{
     const fundLabel=fb=>fb?fb:"all accessible assets";
-    const groups={};
+    const groups=Object.create(null);   // fundedBy is a free string; "__proto__" must not resolve to Object.prototype
     goals.forEach(g=>{const k=g.fundedBy||"";(groups[k]=groups[k]||[]).push(g);});
     const gname=g=>(g.name||"(untitled goal)").slice(0,40);
     const goalLines=goals.map(g=>{
@@ -3919,12 +3993,14 @@ async function chatSend(){
   input.disabled=true;
   chatAbortCtl=new AbortController();
 
-  let body=chatBody(chatWire(),state.chat.model);
-  let acc="",needRender=false;
+  let body,acc="",needRender=false;
   const onToken=tok=>{acc+=tok;bubble.textContent=stripThink(acc);bubble.appendChild(cursor);
     log.scrollTop=log.scrollHeight;};
 
   try{
+    // inside the try: a throw while building the context (a hostile goal, say) must reach the
+    // finally that re-enables the composer, or the panel is stuck on "Stop" until reload
+    body=chatBody(chatWire(),state.chat.model);
     try{
       await chatStreamOnce(state.chat.endpoint,body,onToken);
     }catch(e1){
@@ -4000,7 +4076,7 @@ async function chatProbe(ep,{timeout=4000,diagnose=true}={}){
     const r=await fetch(ep+"/api/tags",{signal:AbortSignal.timeout(timeout)});
     if(!r.ok)return {kind:"error",status:r.status};
     const d=await r.json().catch(()=>({}));
-    return {kind:"ok",models:(Array.isArray(d.models)?d.models:[]).map(m=>m&&m.name).filter(Boolean)};
+    return {kind:"ok",models:(Array.isArray(d.models)?d.models:[]).map(m=>m&&typeof m.name==="string"?m.name.slice(0,80):"").filter(Boolean)};
   }catch(e){
     if(e.name==="TimeoutError")return {kind:"slow"};
     // The silent check on panel open passes diagnose:false — it only needs to know "not working",
@@ -4263,7 +4339,7 @@ async function chatConnect(ep,{timeout=4000,diagnose=true,silent=false}={}){
   return res;
 }
 function chatSetModel(name){
-  state.chat.model=name;
+  state.chat.model=sStr(name,80);
   chatWantModelPick=false;
   save();chatRefreshChat();
 }
@@ -4443,10 +4519,10 @@ function init(){
 
   // future-spend assumptions (static inputs — wired once, values set on each render)
   document.getElementById("fRate").addEventListener("change",e=>{
-    state.budget.assumptions.rate=parseFloat(e.target.value)||0;save();renderFutureChart();
+    state.budget.assumptions.rate=clampRate(e.target.value);save();renderFutureChart();
   });
   document.getElementById("fYears").addEventListener("change",e=>{
-    state.budget.assumptions.years=Math.max(1,Math.min(60,parseInt(e.target.value,10)||30));save();renderFutureChart();
+    state.budget.assumptions.years=clampYears(e.target.value);save();renderFutureChart();
   });
 
   // menu
@@ -4474,7 +4550,10 @@ function init(){
 
   document.addEventListener("keydown",e=>{
     if(e.key==="Escape"){closeMenu();closeThemeMenu();closeChatPanel();}
-    if(["1","2","3","4","5","6"].includes(e.key)&&!/input|select|textarea/i.test(document.activeElement.tagName)){
+    // not while a dialog or the hint tour owns the screen — every one of them holds focus on a
+    // BUTTON, which the tag test alone lets through, and switching tabs under a modal breaks both
+    if(document.querySelector(".intro-wipe.hold, .hint-card"))return;
+    if(["1","2","3","4","5","6"].includes(e.key)&&!/input|select|textarea/i.test((document.activeElement||{}).tagName||"")){
       show(["overview","ledger","budget","macro","calendar","about"][+e.key-1]);
     }
   });
@@ -4517,15 +4596,16 @@ function init(){
     const y30=parseFloat(document.getElementById("y30").value);
     if(isNaN(y10)&&isNaN(y20)&&isNaN(y30)){toast("Enter at least one yield.");return;}
     state.yields=state.yields.filter(p=>p.date!==d);
-    state.yields.push({date:d,y10:isNaN(y10)?null:y10,y20:isNaN(y20)?null:y20,y30:isNaN(y30)?null:y30});
+    state.yields.push({date:d,y10:isNaN(y10)?null:y10,y20:isNaN(y20)?null:y20,y30:isNaN(y30)?null:y30});capTail(state.yields);
     save();["y10","y20","y30"].forEach(i=>document.getElementById(i).value="");renderMacro();renderTape();toast("Yield reading added");
   });
   document.getElementById("iAdd").addEventListener("click",()=>{
     const d=document.getElementById("iDate").value||today();
     const v=parseFloat(document.getElementById("iVal").value);
     if(isNaN(v)){toast("Enter a CPI value.");return;}
+    const old=state.inflation.find(p=>p.date===d);   // keep the note when a reading is re-entered
     state.inflation=state.inflation.filter(p=>p.date!==d);
-    state.inflation.push({date:d,cpi:v});
+    state.inflation.push(old&&old.note?{date:d,cpi:v,note:old.note}:{date:d,cpi:v});capTail(state.inflation);
     save();document.getElementById("iVal").value="";renderMacro();renderTape();toast("Inflation reading added");
   });
 
