@@ -27,7 +27,7 @@
 -->
 <meta http-equiv="Content-Security-Policy" content="
   default-src 'none';
-  script-src 'sha256-LEfI6wtiATeJWC0ehfYamH0fHWvD5leT9b99SJsRVXU=' 'sha256-Y/u/Do6AQRj6wqIB+1E/xV8pw6on1l7J9RvQFaMGcgw=' https://s3.tradingview.com;
+  script-src 'sha256-LEfI6wtiATeJWC0ehfYamH0fHWvD5leT9b99SJsRVXU=' 'sha256-RI8jHo+7YYA4kZ81ftOUHAo7ontrA2F6PDxkFJ4RwQo=' https://s3.tradingview.com;
   style-src 'unsafe-inline';
   img-src data: https:;
   connect-src https://home.treasury.gov https://api.bls.gov https://open.er-api.com http://127.0.0.1:* http://localhost:*;
@@ -145,11 +145,12 @@
      chaining the scroll to the page behind it once you reach either end.
      User-resizable: every size inside the menu is calc(basePx * var(--set-scale,1)), and
      applySetMenuScale() is the sole writer of --set-scale. Base values are the old fixed px, so
-     scale 1 renders exactly as before. Deliberately NOT scaled: borders, radii, shadow, and
-     max-height — the height cap stays viewport-tied so a large scale scrolls sooner instead of
-     running the panel off the bottom of the screen. min-width is capped to the viewport for the
-     same reason sideways. */
-  .theme-list{position:absolute;top:calc(100% + 6px);right:0;min-width:min(calc(250px * var(--set-scale,1)),calc(100vw - 24px));background:var(--panel-2);border:1px solid var(--line);border-radius:10px;padding:calc(8px * var(--set-scale,1));box-shadow:0 12px 30px rgba(0,0,0,.5);z-index:50;max-height:min(70vh,520px);overflow-y:auto;overscroll-behavior:contain}
+     scale 1 renders exactly as before. Deliberately NOT scaled: borders, radii and shadow.
+     max-height DOES scale, but stays bounded by 70vh: without the scaled term the box stopped
+     growing taller at 520px while its rows kept inflating, so a larger menu just meant a
+     scrollbar and stretched-looking rows. The 70vh term is what still keeps it on screen.
+     min-width is capped to the viewport for the same reason sideways. */
+  .theme-list{position:absolute;top:calc(100% + 6px);right:0;min-width:min(calc(250px * var(--set-scale,1)),calc(100vw - 24px));background:var(--panel-2);border:1px solid var(--line);border-radius:10px;padding:calc(8px * var(--set-scale,1));box-shadow:0 12px 30px rgba(0,0,0,.5);z-index:50;max-height:min(70vh,calc(520px * var(--set-scale,1)));overflow-y:auto;overscroll-behavior:contain}
   .theme-list[hidden]{display:none}
   .set-sec + .set-sec{border-top:1px solid var(--line);margin-top:calc(6px * var(--set-scale,1));padding-top:calc(6px * var(--set-scale,1))}
   /* explicit line-height so CJK values (繁體中文) don't render a taller line box than
@@ -2562,25 +2563,36 @@ function applySetMenuScale(){
 // Mirrors initLiveCalResize(): drag gives live feedback and saves once on release; each arrow
 // key press saves immediately. The menu is anchored top-right, so it grows DOWN and LEFT — the
 // grip sits bottom-left and dragging it that way grows the menu, so it stays under the pointer.
-// Whichever axis moved further drives the scale; 250px (the menu's base width) of drag is 1.0,
-// so a horizontal drag tracks the menu's left edge almost exactly. Pointer capture keeps a fast
-// drag from losing the grip when the cursor outruns the resizing panel.
+//
+// EACH AXIS IS NORMALISED BY ITS OWN BASE DIMENSION. Both axes used to divide by 250 (the base
+// WIDTH), but the menu is ~1.8x taller than it is wide, so a downward drag moved the box 1.8x
+// faster than the pointer: 100px of drag jumped the scale to 1.4 and left the rows looking
+// stretched. Dividing dy by the base HEIGHT instead makes the bottom edge track the pointer the
+// way the left edge already did. Bases are measured once on pointerdown — re-measuring a box the
+// previous move just resized would feed back on itself — and scrollHeight is the right height
+// because max-height clips the visible box while the content is what the scale is driving.
+// Pointer capture keeps a fast drag from losing the grip when the cursor outruns the panel.
 function initSetMenuResize(){
   const grip=document.getElementById("setMenuResize");
   if(!grip)return;
-  let startX=0,startY=0,startScale=1,active=false;
+  let startX=0,startY=0,startScale=1,baseW=250,baseH=457,active=false;
   const set=v=>{state.setMenuScale=clampSetScale(v);applySetMenuScale();};
   grip.addEventListener("pointerdown",e=>{
     e.preventDefault();
     e.stopPropagation();   // keep the menu's outside-click closer out of it
     active=true;startX=e.clientX;startY=e.clientY;startScale=state.setMenuScale||1;
+    const tl=document.getElementById("themeList");
+    // measured, not hardcoded: a long name or CJK values can push the menu past its min-width
+    if(tl){baseW=(tl.offsetWidth||250)/startScale;baseH=(tl.scrollHeight||457)/startScale;}
     grip.setPointerCapture(e.pointerId);
     document.body.classList.add("resizing-set");
   });
   grip.addEventListener("pointermove",e=>{
     if(!active)return;
-    const dx=startX-e.clientX, dy=e.clientY-startY;   // both positive = down-left = bigger
-    set(startScale+(Math.abs(dx)>Math.abs(dy)?dx:dy)/250);
+    // both positive = down-left = bigger; whichever axis asks for more growth wins, so the grip
+    // never lags behind a diagonal drag
+    const dxs=(startX-e.clientX)/baseW, dys=(e.clientY-startY)/baseH;
+    set(startScale+(Math.abs(dxs)>Math.abs(dys)?dxs:dys));
   });
   const end=e=>{
     if(!active)return;
