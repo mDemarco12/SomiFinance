@@ -285,6 +285,7 @@ function seed(){
     calendarOrder:["personal","live"],
     liveCalHeight:500,   // px height of the TradingView box — user-set via the corner grip
     setMenuScale:1,      // ⚙ menu size, text and spacing together — user-set via its corner grip
+    tapePaused:false,    // ticker tape stopped by the user (WCAG 2.2.2 pause control)
     autoRefresh:"off",   // off | stale | always — default off keeps page load request-free
     lastFetch:"",        // YYYY-MM-DD of the last fully successful macro fetch
     archive:{lastQuarter:"",lastAt:"",salt:"",head:"",count:0},   // nudge + truncation anchor only
@@ -358,7 +359,7 @@ def demo_strings(title, watermark, key, calendar_note):
     return [
         ("<title>SomiFinance — Demo</title>", "<title>%s</title>" % title),
         (
-            '<div class="watermark">SomiFinance — Demo ©2026 mDemarco12</div>',
+            '<div class="watermark">SomiFinance — Demo ©<span id="wmYear">2026</span> mDemarco12</div>',
             '<div class="watermark">%s</div>' % watermark,
         ),
         (
@@ -397,7 +398,7 @@ USER = {
     },
     "strings": demo_strings(
         title="SomiFinance",
-        watermark="SomiFinance ©2026 mDemarco12",
+        watermark="SomiFinance ©<span id=\"wmYear\">2026</span> mDemarco12",
         key="somifinance.v1",
         calendar_note="Seeded with recurring US releases. Add your own dates alongside them.",
     ),
@@ -431,7 +432,7 @@ def personal_variant():
         },
         "strings": demo_strings(
             title="SomiFinance — Personal",
-            watermark="SomiFinance ©2026 mDemarco12",
+            watermark="SomiFinance ©<span id=\"wmYear\">2026</span> mDemarco12",
             key="somifinance.personal.v1",
             calendar_note=d.get(
                 "calendarNote",

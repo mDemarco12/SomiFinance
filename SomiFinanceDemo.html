@@ -27,7 +27,7 @@
 -->
 <meta http-equiv="Content-Security-Policy" content="
   default-src 'none';
-  script-src 'sha256-LEfI6wtiATeJWC0ehfYamH0fHWvD5leT9b99SJsRVXU=' 'sha256-OAvI0SgdI5aVLYEczOHTAsfqrYSNk3ZVcBbbdqmp2g0=' https://s3.tradingview.com;
+  script-src 'sha256-LEfI6wtiATeJWC0ehfYamH0fHWvD5leT9b99SJsRVXU=' 'sha256-veLF1asCI3QIlLiP8nYg09GMGFf4hJyTJxsD17XfxIY=' https://s3.tradingview.com;
   style-src 'unsafe-inline';
   img-src data: https:;
   connect-src https://home.treasury.gov https://api.bls.gov https://open.er-api.com http://127.0.0.1:* http://localhost:*;
@@ -113,6 +113,24 @@
   .act.primary{background:var(--amber);color:#1a1206;border-color:var(--amber);font-weight:600}
   .act.primary:hover{color:#1a1206;filter:brightness(1.08)}
   .act:focus-visible{outline:2px solid var(--amber);outline-offset:2px}
+  /* Everything else that is a restyled <button>. These carried no focus style at all, so a
+     keyboard user got only the UA default — which on a button with its own background and border
+     is frequently invisible. That included the primary tab navigator and every one of its items,
+     every picker row in the settings menu, the onboarding tour's own controls, and the destructive
+     reset button. One rule rather than fifteen, matching .act's 2px amber ring above.
+     .theme-opt is shared by all six settings pickers, so this covers them together. */
+  .menu-btn:focus-visible,.menu-item:focus-visible,.theme-opt:focus-visible,
+  .add-row:focus-visible,.del:focus-visible,.set-danger button:focus-visible,
+  .hint-card .hc-x:focus-visible,.hint-card .hc-nav button:focus-visible,
+  .welcome .wc-go:focus-visible,.welcome .wc-skip:focus-visible,.welcome .wc-alt:focus-visible,
+  .cp-badge:focus-visible,.cp-icon:focus-visible,.cp-model:focus-visible,
+  .cp-copy:focus-visible,.cp-send:focus-visible,.cp-primary:focus-visible,
+  .cp-ack button:focus-visible,.cp-adv summary:focus-visible,.toast-act:focus-visible{
+    outline:2px solid var(--amber);outline-offset:2px}
+  /* The welcome overlay paints the accent across the whole screen, so an amber ring on it is
+     amber-on-amber. Its inputs already use a dark ring for this reason; its buttons now match. */
+  .welcome .wc-go:focus-visible,.welcome .wc-skip:focus-visible,.welcome .wc-alt:focus-visible{
+    outline-color:rgba(0,0,0,.6)}
 
   /* dropdown menu nav */
   .menu-wrap{position:relative}
@@ -193,7 +211,23 @@
   /* ticker tape */
   .tape{border-bottom:1px solid var(--line);background:var(--tape-bg);overflow:hidden;white-space:nowrap;position:relative}
   .tape-track{display:inline-block;padding:7px 0;animation:scroll 38s linear infinite}
-  @media (prefers-reduced-motion:reduce){.tape-track{animation:none;padding-left:20px}}
+  /* Visible to a screen reader, not on screen. The glyph alone is not an accessible name. */
+  .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;
+    clip:rect(0 0 0 0);white-space:nowrap;border:0}
+  /* Absolutely positioned, NOT a flex child: .tape-track has to stay an inline-block wider than
+     its container for the marquee to have anywhere to travel, and making .tape a flex container
+     shrinks it to the container width and freezes the scroll. */
+  .tape-pause{position:absolute;top:0;right:0;height:100%;z-index:2;background:var(--tape-bg);
+    border:0;border-left:1px solid var(--line);
+    color:var(--faint);cursor:pointer;font-size:10px;line-height:1;padding:0 12px}
+  .tape-pause:hover{color:var(--ink)}
+  .tape-pause:focus-visible{outline:2px solid var(--amber);outline-offset:-2px}
+  .tape-pause[aria-pressed="true"]{color:var(--amber)}
+  .tape-track.paused{animation-play-state:paused}
+  @media (prefers-reduced-motion:reduce){
+    .tape-track{animation:none;padding-left:20px}
+    .tape-pause{display:none}   /* nothing to pause */
+  }
   @keyframes scroll{from{transform:translateX(0)}to{transform:translateX(-50%)}}
   .tick{display:inline-flex;align-items:baseline;gap:8px;padding:0 22px;font-family:var(--mono);font-size:var(--t-mono);border-right:1px solid var(--line)}
   .tick .lbl{color:var(--muted);letter-spacing:.05em}
@@ -371,8 +405,12 @@
 
   .empty{color:var(--faint);font-size:var(--t-mid);text-align:center;padding:26px}
   .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(80px);background:var(--panel-2);border:1px solid var(--amber-dim);color:var(--ink);padding:11px 18px;border-radius:8px;font-size:13px;box-shadow:0 10px 30px rgba(0,0,0,.5);transition:transform .3s;z-index:60}
-  .toast{display:flex;align-items:center;gap:14px}
-  .toast.show{transform:translateX(-50%) translateY(0)}
+  /* visibility, not just the translate: a toast parked off-screen is still focusable, so its
+     Undo button stayed reachable by Tab long after the message was gone */
+  .toast{display:flex;align-items:center;gap:14px;visibility:hidden;opacity:0;
+    transition:transform .3s,opacity .3s,visibility 0s linear .3s}
+  .toast.show{transform:translateX(-50%) translateY(0);visibility:visible;opacity:1;
+    transition:transform .3s,opacity .3s,visibility 0s}
   /* The recovery control for a misclick. It has to read as pressable at a glance, because it is
      on screen for a few seconds and the row it restores is already gone from the table. */
   .toast-act{background:transparent;border:1px solid var(--amber);color:var(--amber);font:inherit;
@@ -703,8 +741,10 @@
         <button type="button" id="resetBtn">⟲ Reset all data</button>
       </div>
       <div class="set-grip-row">
-        <button type="button" class="resize-grip set-scale-grip" id="setMenuResize" title="Drag to resize · double-click to reset"
-          aria-label="Resize the settings menu. Use arrow keys to adjust; double-click to reset.">
+        <button type="button" class="resize-grip set-scale-grip" id="setMenuResize"
+          title="Drag to resize · double-click or Home to reset"
+          role="slider" aria-valuemin="85" aria-valuemax="160" aria-valuenow="100" aria-valuetext="100%"
+          aria-label="Settings menu size. Arrow keys adjust; Home resets.">
           <svg viewBox="0 0 16 16" aria-hidden="true"><polygon points="1,1 1,15 15,15"/></svg>
         </button>
       </div>
@@ -712,7 +752,13 @@
   </div>
 </div>
 
-<div class="tape"><div class="tape-track" id="tape"></div></div>
+<!-- WCAG 2.2.2: motion that runs for more than five seconds needs a way to stop it, and this
+     runs forever. The button is also the honest fix for anyone who simply finds it distracting.
+     Hidden under prefers-reduced-motion, where the marquee never starts. -->
+<div class="tape">
+  <div class="tape-track" id="tape"></div>
+  <button type="button" class="tape-pause" id="tapePause" aria-pressed="false" title="Pause the ticker">❚❚<span class="sr-only"> Pause the ticker</span></button>
+</div>
 
 <main>
   <div class="banner" id="updateBanner" hidden>
@@ -942,7 +988,9 @@
            element stays empty — it exists only to carry the user's saved height. -->
       <div id="tvBox" style="--live-cal-h:500px"></div>
       <div class="note">Read-only reference feed, not editable and not saved to your data — for your own curated dates (including personal ones like an options expiry or a vesting date), use the table above.</div>
-      <button class="resize-grip" id="tvResize" title="Drag to resize" aria-label="Resize the live calendar. Use arrow keys to adjust height.">
+      <button class="resize-grip" id="tvResize" title="Drag to resize · Home resets"
+        role="slider" aria-valuemin="260" aria-valuemax="1600" aria-valuenow="500" aria-valuetext="500 pixels"
+        aria-label="Live calendar height. Arrow keys adjust; Home resets.">
         <svg viewBox="0 0 16 16" aria-hidden="true"><polygon points="15,1 15,15 1,15"/></svg>
       </button>
     </div>
@@ -1049,7 +1097,7 @@
 </main>
 
 <div class="foot" id="foot"></div>
-<div class="watermark">SomiFinance — Demo ©2026 mDemarco12</div>
+<div class="watermark">SomiFinance — Demo ©<span id="wmYear">2026</span> mDemarco12</div>
 
 <!-- ✦ assistant — local Ollama chat, read-only. No aria-modal / focus trap: the panel is
      non-modal and the page stays usable behind it. aria-live is on the LOG, not per message,
@@ -1312,6 +1360,7 @@ function seed(){
     calendarOrder:["personal","live"],
     liveCalHeight:500,   // px height of the TradingView box — user-set via the corner grip
     setMenuScale:1,      // ⚙ menu size, text and spacing together — user-set via its corner grip
+    tapePaused:false,    // ticker tape stopped by the user (WCAG 2.2.2 pause control)
     autoRefresh:"off",   // off | stale | always — default off keeps page load request-free
     lastFetch:"",        // YYYY-MM-DD of the last fully successful macro fetch
     archive:{lastQuarter:"",lastAt:"",salt:"",head:"",count:0},   // nudge + truncation anchor only
@@ -1334,12 +1383,18 @@ function seed(){
       {date:monthsAgo(1),cpi:3.3,note:"EXAMPLE — demo data"},
       {date:monthsAgo(0),cpi:3.36,note:"EXAMPLE — demo data"}
     ],
+    // Relative, like demoHistory()/yields/inflation above — the only part of this seed that was
+    // still written as literals. Three of the five dates were already in the past, so the demo
+    // opened on a calendar of greyed-out rows, and three carried "verify date", the author's own
+    // note, in a user-facing cell. This file is tracked and is what anyone is shown first.
+    // A mix of past and future on purpose: the tab greys past events, and a demo that never
+    // shows that behaviour hides half of what the panel does.
     calendar:[
-      {id:uid(),date:"2026-09-04",event:"Nonfarm payrolls (Aug)",imp:"High",notes:"verify date"},
-      {id:uid(),date:"2026-09-10",event:"CPI (Aug)",imp:"High",notes:"verify date"},
-      {id:uid(),date:"2026-09-16",event:"FOMC rate decision",imp:"High",notes:"verify date"},
-      {id:uid(),date:"2026-09-24",event:"Vesting date",imp:"Personal",notes:"example personal date"},
-      {id:uid(),date:"2026-10-15",event:"Quarterly rebalance",imp:"Personal",notes:"example personal date"}
+      {id:uid(),date:dayOffset(-12),event:"Nonfarm payrolls",imp:"High",notes:"example data"},
+      {id:uid(),date:dayOffset(-4),event:"CPI release",imp:"High",notes:"example data"},
+      {id:uid(),date:dayOffset(6),event:"FOMC rate decision",imp:"High",notes:"example data"},
+      {id:uid(),date:dayOffset(20),event:"Vesting date",imp:"Personal",notes:"example personal date"},
+      {id:uid(),date:dayOffset(48),event:"Quarterly rebalance",imp:"Personal",notes:"example personal date"}
     ],
     goals:demoGoals(),
     chat:{ack:false,endpoint:"http://127.0.0.1:11434",model:"",messages:[]},
@@ -1549,6 +1604,7 @@ function sanitizeState(d){
   s.calendarOrder=(order.length===2&&order[0]!==order[1])?order:["personal","live"];
   s.liveCalHeight=clampLiveCal(sNum(o.liveCalHeight,500));
   s.setMenuScale=clampSetScale(sNum(o.setMenuScale,1));
+  s.tapePaused=o.tapePaused===true;
   s.autoRefresh=sPick(o.autoRefresh,["off","stale","always"],"off");
   s.lastFetch=sStr(o.lastFetch,40);
 
@@ -1642,10 +1698,18 @@ function save(){
   try{localStorage.setItem(KEY,JSON.stringify(state));}
   catch(e){
     canPersist=false;
-    toast("Couldn't save to this browser — export your data to keep it.");
+    toastErr("Couldn't save to this browser — export your data to keep it.");
     // a 2.6s toast is not enough notice that every edit from here on is lost on reload
     renderFoot();showSaveBlocked();
   }
+}
+// Coalesced save for continuous controls. Holding an arrow key on a resize grip fired save()
+// at the key-repeat rate, serialising the whole state into localStorage dozens of times a
+// second. The drag path already deferred to pointerup; this gives the keyboard path parity.
+let saveSoonT=null;
+function saveSoon(){
+  clearTimeout(saveSoonT);
+  saveSoonT=setTimeout(()=>{saveSoonT=null;save();},180);
 }
 function showSaveBlocked(){
   const b=document.getElementById("updateBanner"),t=document.getElementById("bannerTxt");
@@ -1741,17 +1805,33 @@ const goalNeeded=g=>{const m=monthsUntil(g.targetDate);return (m==null||m<=0)?nu
    keyboard shortcut at its call site, because a toast is a poor thing to have to Tab to. */
 let toastQ=[], toastBusy=false, toastPaused=false, toastWired=false;
 const TOAST_MS=2600, TOAST_ACTION_MS=5000;
+/* Three classes of message, because they deserve different treatment in a queue:
+
+     plain   — status chatter. Collapses: only the NEWEST plain message waits, because a burst of
+               activity otherwise left the user reading notices about things they did ten seconds
+               ago. Losing the middle of three is fine; they are things like "Ledger refreshed".
+     error   — something went wrong. Preserved, and only deduplicated against an identical
+               message, because a dropped diagnostic is invisible exactly when it matters most.
+     action  — carries a button, e.g. Undo. Always preserved.
+
+   toastErr(msg) is the error form. */
 function toast(msg,action){
   if(action){
+    // At most one undo offer is ever live. There is a single undoBuf, so a second delete while
+    // the first toast was still queued left two buttons pointing at one buffer: the older button
+    // restored the NEWER row under the older row's label, and the newer button then found an
+    // empty buffer and did nothing at all, silently. Superseding queued offers is the honest
+    // behaviour; undoDelete()'s seq check covers the offer already on screen.
+    if(action.undo)toastQ=toastQ.filter(x=>!(x.action&&x.action.undo));
     toastQ.push({msg,action});
   }else{
-    // Plain messages do NOT stack up. An action toast is on screen for seconds, and a naive queue
-    // meant a burst of activity left the user reading notices about things they did ten seconds
-    // ago. Only the newest plain message is worth showing, so it replaces any plain message still
-    // waiting — while every action toast is preserved, since that is the offer we must not drop.
-    toastQ=toastQ.filter(x=>x.action);
+    toastQ=toastQ.filter(x=>x.action||x.err);
     toastQ.push({msg});
   }
+  if(!toastBusy)toastNext();
+}
+function toastErr(msg){
+  if(!toastQ.some(x=>x.err&&x.msg===msg))toastQ.push({msg,err:true});
   if(!toastBusy)toastNext();
 }
 function toastWire(el){
@@ -1766,13 +1846,16 @@ function toastWire(el){
 function toastNext(){
   const el=document.getElementById("toast");
   toastWire(el);
+  // Clear the trailing controls BEFORE the empty-queue return, not after. With the cleanup below
+  // it, a drained queue left the last Undo button in the DOM — and the hidden toast is only
+  // translated off-screen, so it stayed focusable and clickable. A keyboard user could tab onto
+  // an invisible Undo and fire it. (.toast now also flips visibility, so the two agree.)
+  [...el.querySelectorAll(".toast-act,.toast-key")].forEach(n=>n.remove());
   const item=toastQ.shift();
   if(!item){toastBusy=false;el.classList.remove("show");return;}
   toastBusy=true;toastPaused=false;
   const msgEl=document.getElementById("toastMsg");
   msgEl.textContent=item.msg;
-  // rebuild the trailing controls, leaving the live region itself in place
-  [...el.querySelectorAll(".toast-act,.toast-key")].forEach(n=>n.remove());
   if(item.action){
     const b=document.createElement("button");
     b.type="button";b.className="toast-act";b.textContent=item.action.label;
@@ -1826,7 +1909,14 @@ const ROW_PATHS={
   "budget.income":  {label:"Cash in",  render:renderBudget},
   "budget.expenses":{label:"Cash out", render:renderBudget}
 };
-let undoBuf=null;
+// One level of undo. `seq` stamps each offer so a toast button that has been superseded by a
+// later delete refuses rather than restoring the wrong row under the wrong label.
+//
+// Deliberate asymmetry, recorded so it isn't read as an oversight: the BUTTON lives as long as
+// its toast (a few seconds), but the buffer itself is not cleared on expiry, so Ctrl+Z still
+// works afterwards. That makes this a real one-level undo rather than a toast gimmick. It is
+// cleared by importJSON(), and a reset reloads the page.
+let undoBuf=null, undoSeq=0;
 // own() rather than a bare lookup: ROW_PATHS["constructor"] is truthy on a plain object.
 const rowMeta=path=>own(ROW_PATHS,path)?ROW_PATHS[path]:null;
 function rowsAt(path){
@@ -1843,19 +1933,24 @@ function deleteRow(path,id){
   const i=arr.findIndex(x=>x.id===id);
   if(i<0){toast("That row is already gone.");return;}
   const row=arr.splice(i,1)[0];
-  undoBuf={path,index:i,row};
+  const seq=++undoSeq;
+  undoBuf={path,index:i,row,seq};
   save();
   meta.render();
   // Name the table: the toast is global, so an undo fired after switching tabs would otherwise
   // be a mystery about which row is coming back.
-  toast(meta.label+" — row deleted.",{label:"Undo",key:UNDO_KEY,onClick:undoDelete});
+  toast(meta.label+" — row deleted.",{label:"Undo",key:UNDO_KEY,undo:true,onClick:()=>undoDelete(seq)});
 }
-function undoDelete(){
-  if(!undoBuf)return false;
+// seq is the offer this call belongs to; omitted (keyboard) means "whatever is current".
+function undoDelete(seq){
+  if(!undoBuf||(seq!==undefined&&undoBuf.seq!==seq)){
+    if(seq!==undefined)toastErr("That undo is no longer available — a newer change replaced it.");
+    return false;
+  }
   const {path,index,row}=undoBuf;
   undoBuf=null;
   const meta=rowMeta(path), arr=rowsAt(path);
-  if(!meta||!arr){toast("That row can't be put back — the data it belonged to has changed.");return true;}
+  if(!meta||!arr){toastErr("That row can't be put back — the data it belonged to has changed.");return true;}
   arr.splice(Math.min(index,arr.length),0,row);   // the list may be shorter than when it left
   save();
   meta.render();
@@ -2227,7 +2322,9 @@ function budgetRowHTML(item,section){
     `<td><select class="cell" data-bf="kind">${SPEND_KINDS.map(k=>
       `<option value="${k}" ${k===item.kind?"selected":""}>${k[0].toUpperCase()+k.slice(1)}</option>`).join("")}</select></td>`;
   return `<tr data-id="${esc(item.id)}" data-section="${esc(section)}" class="${esc(dim.trim())}">
-    <td class="row-drag" draggable="true" title="Drag to reorder">⠿</td>
+    <td class="row-drag" draggable="true" tabindex="0" role="button"
+        aria-label="Reorder this row. Press Alt with the up or down arrow to move it."
+        title="Drag to reorder, or focus and press Alt+↑ / Alt+↓">⠿</td>
     <td>${cellInput(item.name,"","",'data-bf="name"')}</td>
     <td><select class="cell" data-bf="cat">${opts}</select></td>
     <td>${cellInput(toDisplay(item.amount),"num"+(over?" over-limit":""),"",'data-bf="amount" inputmode="decimal"')}</td>
@@ -2388,6 +2485,25 @@ let budgetDrag=null;
 function wireBudgetDrag(tr){
   const handle=tr.querySelector(".row-drag");
   if(!handle)return;
+  // Keyboard equivalent of the drag. This was the only interaction in the app with no
+  // non-pointer path at all — a plain <td> with no tabindex, no role and no key handler, while
+  // the panel heading advertised "drag ⠿ to reorder". Alt rather than a bare arrow so the key
+  // still scrolls the page normally when it isn't meant as a move.
+  handle.addEventListener("keydown",e=>{
+    if(!e.altKey||(e.key!=="ArrowUp"&&e.key!=="ArrowDown"))return;
+    e.preventDefault();
+    const section=tr.dataset.section, id=tr.dataset.id;
+    const arr=budgetArr(section);
+    const i=arr.findIndex(x=>x.id===id);
+    const j=e.key==="ArrowUp"?i-1:i+1;
+    if(i<0||j<0||j>=arr.length)return;
+    // Reuse the drag path's own mover rather than splicing here, so both routes stay identical:
+    // move onto the neighbour, inserting below it when travelling down.
+    moveBudgetRow(section,id,arr[j].id,e.key==="ArrowDown");
+    // renderBudget() rebuilt the tbody, so the old node is gone — re-find this row's handle.
+    const again=document.querySelector('tr[data-id="'+CSS.escape(id)+'"] .row-drag');
+    if(again)again.focus();
+  });
   handle.addEventListener("dragstart",e=>{
     budgetDrag={id:tr.dataset.id,section:tr.dataset.section};
     e.dataTransfer.effectAllowed="move";
@@ -2479,23 +2595,25 @@ function renderFutureChart(){
   const pal=P();
   const a=state.budget.assumptions;
   const pmt=discretionaryMonthly();
-  const years=clampYears(a.years),rate=clampRate(a.rate);
-  const fv=futureValue(pmt,rate,years);
-  const contributed=pmt*12*years;
-  // Count distinct categories, not rows. The label says "categories" and this counted matching
-  // rows, so two discretionary rows both filed under Eating out read as "across 2 categories".
-  const discCats=new Set(state.budget.expenses.filter(e=>e.kind==="discretionary"&&+e.amount>0).map(e=>e.cat)).size;
+  // The two inputs are synced whichever way this render goes, so do it first and once.
+  // (Skipped for a focused field — repainting a box mid-typing eats the keystroke.)
+  const rEl=document.getElementById("fRate"),yEl=document.getElementById("fYears");
+  if(document.activeElement!==rEl)rEl.value=a.rate;
+  if(document.activeElement!==yEl)yEl.value=a.years;
   // With nothing discretionary, every series is flat zero: two lines pinned to the axis for
   // thirty years under the reads "If invested instead $0 / Growth forgone $0 beyond the $0
   // spent". Mathematically right, and it looks like the panel failed to load.
   if(!(pmt>0)){
     document.getElementById("futureReads").innerHTML="";
     chartEmpty("futureChart","futureChartNote","Nothing discretionary to project yet. Mark a spending row <b>Discretionary</b> in the Type column and give it an amount — this panel then shows what that money would be worth invested instead.");
-    const rEl0=document.getElementById("fRate"),yEl0=document.getElementById("fYears");
-    if(document.activeElement!==rEl0)rEl0.value=a.rate;
-    if(document.activeElement!==yEl0)yEl0.value=a.years;
     return;
   }
+  const years=clampYears(a.years),rate=clampRate(a.rate);
+  const fv=futureValue(pmt,rate,years);
+  const contributed=pmt*12*years;
+  // Count distinct categories, not rows. The label says "categories" and this counted matching
+  // rows, so two discretionary rows both filed under Eating out read as "across 2 categories".
+  const discCats=new Set(state.budget.expenses.filter(e=>e.kind==="discretionary"&&+e.amount>0).map(e=>e.cat)).size;
   chartNoteClear("futureChartNote");
   document.getElementById("futureReads").innerHTML=
     `<div class="read"><span class="rl">Discretionary / mo</span><span class="rv" style="color:${pal.peach}">${fmt(pmt)}</span><span class="rd">across ${discCats} ${discCats===1?"category":"categories"}</span></div>`+
@@ -2514,23 +2632,19 @@ function renderFutureChart(){
     x:{grid:{color:CH_GRID()},ticks:{color:CH_TICK(),font:{family:"ui-monospace,monospace",size:10},maxRotation:0,autoSkip:true,maxTicksLimit:8}},
     y:{grid:{color:CH_GRID()},ticks:{color:CH_TICK(),font:{family:"ui-monospace,monospace",size:10},callback:v=>tickMoneyK(v)}}
   }}));
-  const rEl=document.getElementById("fRate"),yEl=document.getElementById("fYears");
-  if(document.activeElement!==rEl)rEl.value=a.rate;
-  if(document.activeElement!==yEl)yEl.value=a.years;
 }
 
 /* ---------- render: macro ---------- */
 // Charting an empty series leaves a bare grid with an auto 0–1 axis and no word of explanation,
 // which reads as a broken panel rather than an empty one. renderOverview() and renderSpendChart()
 // already solve this by destroying the chart and writing a line of copy; this is that pattern
-// pulled out so the three Macro panels can share it. Returns true when it handled the empty case.
+// pulled out so the three Macro panels can share it.
 function chartEmpty(id,noteId,msg){
   if(charts[id]){charts[id].destroy();delete charts[id];}
   const c=document.getElementById(id);
   if(c&&c.getContext)c.getContext("2d").clearRect(0,0,c.width,c.height);
   const n=document.getElementById(noteId);
   if(n)n.innerHTML=msg;
-  return true;
 }
 const chartNoteClear=noteId=>{const n=document.getElementById(noteId);if(n)n.innerHTML="";};
 
@@ -2783,6 +2897,9 @@ function ensureTradingViewWidget(){
 function setLiveCalPx(h){
   const tvBox=document.getElementById("tvBox");
   if(tvBox)tvBox.style.setProperty("--live-cal-h",h+"px");
+  // the grip is role="slider"; without a value it announces nothing as it moves
+  const g=document.getElementById("tvResize");
+  if(g){g.setAttribute("aria-valuenow",String(Math.round(h)));g.setAttribute("aria-valuetext",Math.round(h)+" pixels");}
 }
 function applyLiveCalHeight(){
   setLiveCalPx(clampLiveCal(state.liveCalHeight||500));
@@ -2814,19 +2931,25 @@ function initLiveCalResize(){
   grip.addEventListener("pointerup",end);
   grip.addEventListener("pointercancel",end);
   grip.addEventListener("keydown",e=>{
+    if(e.key==="Home"){e.preventDefault();state.liveCalHeight=clampLiveCal(500);setLiveCalPx(state.liveCalHeight);saveSoon();return;}
     const step=e.key==="ArrowDown"?1:e.key==="ArrowUp"?-1:0;
     if(!step)return;
     e.preventDefault();
     state.liveCalHeight=clampLiveCal(tvBox.offsetHeight+step*(e.shiftKey?60:20));
     setLiveCalPx(state.liveCalHeight);
-    save();
+    saveSoon();   // debounced: holding an arrow wrote to localStorage at the key-repeat rate
   });
 }
 // Sole writer of --set-scale. Every size inside the ⚙ menu is calc(basePx * var(--set-scale)),
 // so this one property resizes the panel and its text, spacing and swatches together.
 function applySetMenuScale(){
+  const v=clampSetScale(state.setMenuScale||1);
   const tl=document.getElementById("themeList");
-  if(tl)tl.style.setProperty("--set-scale",String(clampSetScale(state.setMenuScale||1)));
+  if(tl)tl.style.setProperty("--set-scale",String(v));
+  // role="slider" without a value announces nothing: a non-sighted user pressing an arrow key
+  // got no feedback that anything had changed at all.
+  const g=document.getElementById("setMenuResize");
+  if(g){const pct=Math.round(v*100);g.setAttribute("aria-valuenow",String(pct));g.setAttribute("aria-valuetext",pct+"%");}
 }
 // Mirrors initLiveCalResize(): drag gives live feedback and saves once on release; each arrow
 // key press saves immediately. The menu is anchored top-right, so it grows DOWN and LEFT — the
@@ -2873,13 +2996,17 @@ function initSetMenuResize(){
   grip.addEventListener("pointercancel",end);
   grip.addEventListener("click",e=>e.stopPropagation());
   grip.addEventListener("dblclick",e=>{e.stopPropagation();set(1);save();});
-  // Same directions as the drag: Down/Left grow, Up/Right shrink (Down = bigger matches #tvResize)
+  // Same directions as the drag: Down/Left grow, Up/Right shrink (Down = bigger matches #tvResize).
+  // Home resets, because the aria-label used to tell a keyboard user to "double-click to reset",
+  // which is the one gesture they cannot make.
   grip.addEventListener("keydown",e=>{
+    if(e.key==="Home"){e.preventDefault();set(1);saveSoon();return;}
     const step=(e.key==="ArrowDown"||e.key==="ArrowLeft")?1:(e.key==="ArrowUp"||e.key==="ArrowRight")?-1:0;
     if(!step)return;
     e.preventDefault();
     set((state.setMenuScale||1)+step*(e.shiftKey?0.15:0.05));
-    save();
+    // debounced: holding an arrow key wrote to localStorage at the key-repeat rate
+    saveSoon();
   });
 }
 function swapCalendarPanels(){
@@ -2951,6 +3078,28 @@ function renderCalendar(){
 }
 
 /* ---------- ticker tape ---------- */
+// The tape scrolls forever, which WCAG 2.2.2 asks for a way to stop. The preference persists
+// because someone who needs motion stopped needs it stopped on every visit, not once per tab.
+// (prefers-reduced-motion already kills the animation outright and hides this button.)
+function applyTapePause(){
+  const track=document.getElementById("tape"), btn=document.getElementById("tapePause");
+  const off=!!state.tapePaused;
+  if(track)track.classList.toggle("paused",off);
+  if(btn){
+    btn.setAttribute("aria-pressed",String(off));
+    btn.title=off?"Resume the ticker":"Pause the ticker";
+    btn.textContent=off?"▶":"❚❚";
+    const sr=document.createElement("span");
+    sr.className="sr-only";
+    sr.textContent=off?" Resume the ticker":" Pause the ticker";
+    btn.appendChild(sr);
+  }
+}
+function toggleTapePause(){
+  state.tapePaused=!state.tapePaused;
+  save();
+  applyTapePause();
+}
 function renderTape(){
   const y=[...state.yields].sort((a,b)=>a.date<b.date?-1:1).pop()||{};
   const inf=[...state.inflation].sort((a,b)=>a.date<b.date?-1:1).pop()||{};
@@ -2996,7 +3145,18 @@ function show(tab){
   // scrollY to the new maximum, so reading the start position any earlier is stale
   scrollTabToTop();
 }
-function closeMenu(){document.getElementById("menuList").hidden=true;document.getElementById("menuBtn").setAttribute("aria-expanded","false");}
+// Closing a popup while focus is inside it drops focus to <body>, which strands a keyboard user
+// at the top of the document with no idea where they are. Hand it back to the control that
+// opened the popup — but only if it was in there, so a mouse click doesn't steal focus.
+function restoreFocusFrom(container,btn){
+  if(container.contains(document.activeElement)&&btn)btn.focus();
+}
+function closeMenu(){
+  const ml=document.getElementById("menuList"),mb=document.getElementById("menuBtn");
+  restoreFocusFrom(ml,mb);
+  ml.hidden=true;
+  mb.setAttribute("aria-expanded","false");
+}
 
 /* ---------- scroll-to-top on tab switch ---------- */
 let scrollAnim=null;
@@ -3048,6 +3208,7 @@ function renderThemeList(){
 }
 function closeThemeMenu(){
   const tl=document.getElementById("themeList");
+  restoreFocusFrom(tl,document.getElementById("cogBtn"));
   tl.hidden=true;
   document.getElementById("cogBtn").setAttribute("aria-expanded","false");
   openSetSection(null);   // always reopen compact, with every section collapsed
@@ -3436,8 +3597,10 @@ function showArchiveDialog(opts){
     const w=$("#arWarn"),h=opts.warnFor(sel?sel.value:"");
     w.innerHTML=h;w.hidden=!h;
   };
+  const release=trapFocus(panel);
   const close=()=>{
     document.removeEventListener("keydown",onEsc,true);
+    release();
     panel.classList.add("closing");
     setTimeout(()=>panel.remove(),320);
     const cog=document.getElementById("cogBtn");
@@ -3471,7 +3634,10 @@ function showArchiveDialog(opts){
   if($("#arCancel"))$("#arCancel").addEventListener("click",()=>{if(!busy)close();});
   document.addEventListener("keydown",onEsc,true);
   setWarn();
-  setTimeout(()=>{const f=$("#arPass")||sel||go;if(f)f.focus();},480);   // after the sweep-in settles
+  // Immediately. This one mattered most: for 480ms the passphrase dialog was up while focus was
+  // still on the page behind, so an early typist put their passphrase into a ledger cell, which
+  // then persisted it in cleartext — the one value in the app that is never meant to be stored.
+  {const f=$("#arPass")||sel||go;if(f)f.focus();}
 }
 
 const archiveUnavailable=()=>toast("Archiving needs your browser's built-in encryption — see ⚙ → Quarterly archive.");
@@ -3827,7 +3993,15 @@ function showWelcome(){
   </div>`;
   document.body.appendChild(panel);
 
+  const release=trapFocus(panel);
+  let done=false;
   const finish=withTour=>{
+    // Re-entry guard: #wcGo and Enter on the name field both call this, so a fast Enter-then-click
+    // ran it twice — show("ledger") twice and startHints() scheduled twice, and startHints()
+    // re-registers scroll/resize/keydown listeners that endHints() only removes one copy of.
+    if(done)return;
+    done=true;
+    release();
     state.profile.name=document.getElementById("wcName").value.trim().slice(0,40);
     state.profile.goal=document.getElementById("wcGoal").value;
     state.onboarded=true;
@@ -3849,10 +4023,12 @@ function showWelcome(){
   };
   document.getElementById("wcGo").addEventListener("click",()=>finish(true));
   document.getElementById("wcSkip").addEventListener("click",()=>finish(false));
-  document.getElementById("wcName").addEventListener("keydown",e=>{
+  // Enter submits from EITHER field. It was bound to the name box alone, so pressing Enter on
+  // the goal dropdown — the last thing the form asks you for — did nothing at all.
+  ["wcName","wcGoal"].forEach(id=>document.getElementById(id).addEventListener("keydown",e=>{
     if(e.key==="Enter"){e.preventDefault();finish(true);}
-  });
-  setTimeout(()=>{const n=document.getElementById("wcName");if(n)n.focus();},480);
+  }));
+  {const n=document.getElementById("wcName");if(n)n.focus();}   // immediately — see showResetConfirm()
 }
 
 /* ---------- reset ----------
@@ -3871,13 +4047,21 @@ function clearStoredData(){
     if(LEGACY_KEY)localStorage.removeItem(LEGACY_KEY);
   }catch(e){/* private windows can throw on access; nothing was persisted anyway */}
 }
-// "Is there anything here worth protecting?" Budget rows are excluded on purpose: every build
-// seeds them, so they are present on a brand-new install and say nothing about whether the user
-// has actually put work in. Also used to decide whether to offer example data (see ⚙).
-const hasUserData=()=>!!(state.assets.length||state.liabilities.length||state.history.length||
-  state.goals.length||state.calendar.length||
+// "Is this a brand-new install that has never been used?" Deliberately STRICT, and deliberately
+// not the same question as "is there anything to lose" — those two want opposite answers when
+// they are unsure, so they must not share a function.
+//
+// Two fields are excluded because every build seeds them and their presence says nothing about
+// whether the user has done anything: budget ROWS (seeded with every amount at 0 — the amounts
+// are what count) and the calendar (nextReleases() always returns three example rows, so testing
+// its length would make this permanently false, silently withholding whatever it gates).
+const isFreshInstall=()=>!(
+  state.assets.length||state.liabilities.length||state.history.length||state.goals.length||
+  (state.archive&&state.archive.count)||
   (state.chat&&state.chat.messages&&state.chat.messages.length)||
-  (state.archive&&state.archive.count));
+  state.budget.income.some(r=>+r.amount)||
+  state.budget.expenses.some(r=>+r.amount||+r.limit)
+);
 
 /* Import replaces the entire dataset, and the button that starts it sits one click from Export
    and Refresh in the topbar. It used to go straight through: pick a file and every asset,
@@ -3887,9 +4071,14 @@ const hasUserData=()=>!!(state.assets.length||state.liabilities.length||state.hi
 
    This is deliberately a lighter gate than Reset's: the user picked a specific file and has a
    copy of it, whereas Reset leaves nothing anywhere. It names the file, says what goes, and
-   offers the export. On a genuinely empty install there is nothing to lose, so it doesn't ask. */
+   offers the export.
+
+   It asks EVERY time, with no "skip it on an empty install" shortcut. That shortcut was tried and
+   removed: deciding it needs a reliable answer to "has this user done anything yet", the honest
+   answer is often no (a budget-only user has no ledger at all, and the calendar ships seeded), and
+   getting it wrong means silently destroying someone's work to save them one click. One click is
+   cheaper than that bet. */
 function showImportConfirm(file,proceed){
-  if(!hasUserData()){proceed();return;}
   const panel=document.createElement("div");
   panel.className="intro-wipe hold danger";
   panel.setAttribute("role","dialog");
@@ -3913,8 +4102,10 @@ function showImportConfirm(file,proceed){
     </div>
   </div>`;
   document.body.appendChild(panel);
+  const release=trapFocus(panel);
   const close=()=>{
     document.removeEventListener("keydown",onEsc,true);
+    release();
     panel.classList.add("closing");
     setTimeout(()=>panel.remove(),320);
     const b=document.getElementById("importBtn");
@@ -3968,8 +4159,10 @@ function showResetConfirm(){
     go.disabled=!on;
     go.setAttribute("aria-disabled",String(!on));
   };
+  const release=trapFocus(panel);
   const close=()=>{
     document.removeEventListener("keydown",esc,true);
+    release();
     panel.classList.add("closing");
     setTimeout(()=>panel.remove(),320);
     const cog=document.getElementById("cogBtn");
@@ -3994,7 +4187,9 @@ function showResetConfirm(){
   panel.querySelector("#rsExport").addEventListener("click",exportJSON);
   document.addEventListener("keydown",esc,true);
   sync();
-  setTimeout(()=>input.focus(),480);   // after the panel's sweep-in settles
+  // Immediately, not on a timer. A 480ms delay left the dialog on screen while focus was still
+  // on the page behind it, so anything typed in that window went to the wrong element.
+  input.focus();
 }
 
 // Each step highlights a live field and explains it beside it. Selectors are re-resolved
@@ -4077,7 +4272,11 @@ function placeHintCard(target){
 }
 function showHint(i){
   clearHintMarks();
-  // skip any step whose target isn't on the page
+  // Skip any step whose target isn't on the page. NOTE this runs BEFORE the tab switch below,
+  // and startHints() pre-filters with the same test — so a step carrying `tab:` must have a
+  // selector that resolves from ANY tab, or it is silently dropped before it can switch to the
+  // tab that would make it exist. #refreshBtn is in the topbar, which is why the one step that
+  // uses `tab:` today is fine. A step pointing inside its own tab's panel would not be.
   while(i<hintSteps.length&&!document.querySelector(hintSteps[i].sel))i++;
   if(i<0||i>=hintSteps.length){endHints();return;}
   hintIdx=i;
@@ -4918,10 +5117,43 @@ function initChat(){
   },true);
 }
 
+/* ---------- modal focus containment ----------
+   showWelcome(), showResetConfirm(), showArchiveDialog() and showImportConfirm() all declare
+   role="dialog" aria-modal="true", and until now none of them meant it: there was no focus trap
+   and the page behind stayed in the tab order, so Tab walked straight out of "Reset all data?"
+   into the live topbar and back through the whole app underneath the overlay.
+
+   Returns a function that releases the trap. Deliberately a Tab-wrapping trap rather than
+   `inert` on everything else: inert is newer than the browsers this file is meant to open in
+   unchanged, and a wrap is what a screen-reader user expects of aria-modal anyway. */
+const FOCUSABLE='a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),'+
+  'textarea:not([disabled]),summary,[tabindex]:not([tabindex="-1"])';
+function trapFocus(panel){
+  const items=()=>[...panel.querySelectorAll(FOCUSABLE)].filter(el=>el.offsetParent!==null||el===document.activeElement);
+  const onKey=e=>{
+    if(e.key!=="Tab")return;
+    const f=items();
+    if(!f.length)return;
+    const first=f[0], last=f[f.length-1];
+    // Focus outside the panel entirely (the page behind, or the address bar coming back) —
+    // pull it to whichever end the user was heading for.
+    if(!panel.contains(document.activeElement)){e.preventDefault();(e.shiftKey?last:first).focus();return;}
+    if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus();}
+    else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}
+  };
+  document.addEventListener("keydown",onKey,true);
+  return ()=>document.removeEventListener("keydown",onKey,true);
+}
+
 /* ---------- boot ---------- */
 function boot(rerender){
   applyTheme(state.theme||"terminal");
   applySetMenuScale();
+  applyTapePause();
+  // The footer year was a literal in three places. This file is downloaded once and kept, so a
+  // baked year silently ages into looking abandoned. Falls back to the markup's value if the
+  // element is ever missing.
+  {const wy=document.getElementById("wmYear");if(wy)wy.textContent=String(new Date().getFullYear());}
   renderThemeList();
   renderAutoRefreshList();
   renderLangList();
@@ -4966,7 +5198,38 @@ function init(){
 
   // menu
   const mb=document.getElementById("menuBtn"),ml=document.getElementById("menuList");
-  mb.addEventListener("click",e=>{e.stopPropagation();const open=ml.hidden;ml.hidden=!open;mb.setAttribute("aria-expanded",String(open));});
+  // role="menu" is a promise: open it and focus is supposed to move inside, arrows are supposed
+  // to walk the items, and Escape is supposed to hand focus back. None of that happened — the
+  // button only toggled `hidden`, so a screen-reader user who activated it landed nowhere.
+  const menuItems=()=>[...ml.querySelectorAll(".menu-item")];
+  const openMenu=focusFirst=>{
+    ml.hidden=false;
+    mb.setAttribute("aria-expanded","true");
+    if(focusFirst){
+      const items=menuItems();
+      // start on the tab you are already on, which is what aria-current marks
+      const at=items.findIndex(m=>m.getAttribute("aria-current")==="true");
+      (items[at>=0?at:0]||mb).focus();
+    }
+  };
+  mb.addEventListener("click",e=>{
+    e.stopPropagation();
+    if(ml.hidden)openMenu(false); else closeMenu();
+  });
+  mb.addEventListener("keydown",e=>{
+    if(e.key==="ArrowDown"||e.key==="ArrowUp"){e.preventDefault();openMenu(true);}
+  });
+  ml.addEventListener("keydown",e=>{
+    const items=menuItems();
+    const at=items.indexOf(document.activeElement);
+    if(e.key==="ArrowDown"||e.key==="ArrowUp"){
+      e.preventDefault();
+      const next=at<0?0:(at+(e.key==="ArrowDown"?1:items.length-1))%items.length;   // wraps
+      items[next].focus();
+    }else if(e.key==="Home"){e.preventDefault();items[0].focus();}
+    else if(e.key==="End"){e.preventDefault();items[items.length-1].focus();}
+    else if(e.key==="Escape"){e.preventDefault();closeMenu();mb.focus();}
+  });
   document.querySelectorAll(".menu-item").forEach(m=>m.addEventListener("click",()=>show(m.dataset.tab)));
   document.addEventListener("click",e=>{if(!ml.hidden&&!e.target.closest(".menu-wrap"))closeMenu();});
 
@@ -4989,17 +5252,20 @@ function init(){
 
   document.addEventListener("keydown",e=>{
     if(e.key==="Escape"){closeMenu();closeThemeMenu();closeChatPanel();}
+    // not while a dialog or the hint tour owns the screen — every one of them holds focus on a
+    // BUTTON, which the tag test alone lets through, and switching tabs under a modal breaks both
+    if(document.querySelector(".intro-wipe.hold, .hint-card"))return;
     // Undo the last row delete. A toast button is a poor sole recovery affordance for a keyboard
     // user — it is a few seconds long and focus never moves to it — so the same action has a
-    // shortcut. Skipped while typing, where the browser's own text undo has to win.
+    // shortcut. Skipped while typing, where the browser's own text undo has to win, and it sits
+    // BELOW the modal guard above for the reason that comment gives: the import confirm holds
+    // focus on a button, so a tag test alone would let Ctrl+Z mutate and persist the very dataset
+    // the dialog is asking permission to replace.
     if((e.metaKey||e.ctrlKey)&&!e.shiftKey&&!e.altKey&&(e.key==="z"||e.key==="Z")){
       if(/input|select|textarea/i.test((document.activeElement||{}).tagName||""))return;
       if(undoBuf&&undoDelete())e.preventDefault();
       return;
     }
-    // not while a dialog or the hint tour owns the screen — every one of them holds focus on a
-    // BUTTON, which the tag test alone lets through, and switching tabs under a modal breaks both
-    if(document.querySelector(".intro-wipe.hold, .hint-card"))return;
     if(["1","2","3","4","5","6"].includes(e.key)&&!/input|select|textarea/i.test((document.activeElement||{}).tagName||"")){
       show(["overview","ledger","budget","macro","calendar","about"][+e.key-1]);
     }
@@ -5018,6 +5284,7 @@ function init(){
     }
   });
   document.getElementById("exportBtn").addEventListener("click",exportJSON);
+  document.getElementById("tapePause").addEventListener("click",toggleTapePause);
   document.getElementById("importBtn").addEventListener("click",()=>document.getElementById("importFile").click());
   document.getElementById("importFile").addEventListener("change",e=>{
     const f=e.target.files[0];
