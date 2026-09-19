@@ -1,0 +1,37 @@
+name: Feature request
+description: Suggest something SomiFinance should do
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before opening this, it is worth skimming the **Could be done** section of
+        [PROJECT_STATUS.md](../blob/main/PROJECT_STATUS.md). Several common requests are listed
+        there, some with the reasoning for why they were tried and deliberately reverted.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+      description: Describe the situation rather than the solution, so there is room to find a better one.
+    validations:
+      required: true
+
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would you like to see?
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: constraints
+    attributes:
+      label: Does it fit how SomiFinance works?
+      description: >
+        SomiFinance is one HTML file with no backend, no build step for users, and no account.
+        Requests that hold to these are much more likely to happen.
+      options:
+        - label: It works with no server and no account
+        - label: It does not require sending financial data anywhere
+        - label: It still works offline, or degrades gracefully without a network

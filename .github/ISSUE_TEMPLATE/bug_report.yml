@@ -1,0 +1,71 @@
+name: Bug report
+description: Something in SomiFinance behaves incorrectly
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report this.
+
+        **Do not report a security vulnerability here.** Use the Security tab instead, per
+        [SECURITY.md](../blob/main/SECURITY.md).
+
+        **Please do not paste real financial figures or an unredacted Export file.** A description
+        of the shape of the data is enough, and if a file is genuinely needed, replace the amounts
+        with made-up ones first.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What did you expect, and what did you get instead?
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open SomiFinance.html
+        2. Go to the Budgeting tab
+        3. ...
+    validations:
+      required: true
+
+  - type: dropdown
+    id: build
+    attributes:
+      label: Which file are you running?
+      options:
+        - SomiFinance.html (the normal download)
+        - SomiFinanceDemo.html (the example-data build)
+        - I built it myself from source
+    validations:
+      required: true
+
+  - type: input
+    id: browser
+    attributes:
+      label: Browser and operating system
+      placeholder: Firefox 142 on Windows 11
+    validations:
+      required: true
+
+  - type: textarea
+    id: console
+    attributes:
+      label: Console errors
+      description: >
+        Optional. Open the developer tools console, reload, reproduce the problem, and paste
+        anything red. Check it for figures before pasting.
+      render: text
+
+  - type: checkboxes
+    id: offline
+    attributes:
+      label: Anything unusual about the setup?
+      options:
+        - label: I am opening the file from disk (the address starts with file://)
+        - label: I am using a private or incognito window
+        - label: I have the optional Ollama assistant connected

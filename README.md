@@ -125,6 +125,15 @@ There's nothing to build to *use* SomiFinance — you download one HTML file and
 
 This is an actively evolving personal project. For the full breakdown of what's built, what's planned, and known rough edges, see [PROJECT_STATUS.md](PROJECT_STATUS.md).
 
+## License
+
+MIT — see [LICENSE](LICENSE). Chart.js and the Catppuccin palettes are bundled under their own MIT
+licences, noted there.
+
+## Security
+
+Found a vulnerability? Please report it privately rather than in an issue — see [SECURITY.md](SECURITY.md).
+
 ## Disclaimer
 
 Not financial advice. SomiFinance is a personal tracking tool, not investment guidance.
