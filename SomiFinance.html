@@ -30,7 +30,7 @@
 -->
 <meta http-equiv="Content-Security-Policy" content="
   default-src 'none';
-  script-src 'sha256-LEfI6wtiATeJWC0ehfYamH0fHWvD5leT9b99SJsRVXU=' 'sha256-j3FoP0rzlkoiOAgRqIZmRAY3M2eWmlsmZsQCVW/VFXw=' https://s3.tradingview.com;
+  script-src 'sha256-LEfI6wtiATeJWC0ehfYamH0fHWvD5leT9b99SJsRVXU=' 'sha256-pn64W/8nBPz9qCPYVANVsbVLq9mvh89VwlF0LUXNDKU=' https://s3.tradingview.com;
   style-src 'unsafe-inline';
   img-src data: https:;
   connect-src https://home.treasury.gov https://api.bls.gov https://open.er-api.com http://127.0.0.1:* http://localhost:*;
@@ -374,7 +374,15 @@
 
   .empty{color:var(--faint);font-size:var(--t-mid);text-align:center;padding:26px}
   .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(80px);background:var(--panel-2);border:1px solid var(--amber-dim);color:var(--ink);padding:11px 18px;border-radius:8px;font-size:13px;box-shadow:0 10px 30px rgba(0,0,0,.5);transition:transform .3s;z-index:60}
+  .toast{display:flex;align-items:center;gap:14px}
   .toast.show{transform:translateX(-50%) translateY(0)}
+  /* The recovery control for a misclick. It has to read as pressable at a glance, because it is
+     on screen for a few seconds and the row it restores is already gone from the table. */
+  .toast-act{background:transparent;border:1px solid var(--amber);color:var(--amber);font:inherit;
+    font-weight:700;padding:4px 12px;border-radius:6px;cursor:pointer;white-space:nowrap}
+  .toast-act:hover{background:var(--amber);color:var(--bg)}
+  .toast-act:focus-visible{outline:2px solid var(--amber);outline-offset:2px}
+  .toast-key{color:var(--faint);font-size:11px;white-space:nowrap}
   .foot{max-width:var(--shell);margin:24px auto 0;padding:0 20px;color:var(--faint);font-size:clamp(11.5px,calc(8.2px + 0.28vw),14.5px);line-height:1.6}
   .foot code{background:var(--panel);padding:1px 5px;border-radius:4px;font-size:var(--t-fine)}
   .watermark{max-width:var(--shell);margin:10px auto 0;padding:0 20px;color:var(--faint);font-size:var(--t-fine);text-align:center;letter-spacing:.03em}
@@ -606,6 +614,12 @@
     .welcome{animation:none;opacity:1}
     .chat-panel{animation:none}
     .cp-msg .cp-cursor{animation:none}
+    /* The toast is the most frequent motion in the app and was the only one this block missed:
+       it kept sliding 80px on every message. Drop the slide and hide it by opacity instead —
+       without swapping the mechanism it would simply sit on screen permanently, since the
+       off-screen state IS the translate. visibility keeps the hidden toast out of the tab order. */
+    .toast{transform:translateX(-50%);opacity:0;visibility:hidden;transition:opacity .12s}
+    .toast.show{transform:translateX(-50%);opacity:1;visibility:visible}
   }
 </style>
 </head>
@@ -1058,7 +1072,10 @@
   <div class="cp-fine">AI-generated · runs on your machine · read-only · not financial advice</div>
 </div>
 
-<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<!-- The live region is the message SPAN, not the container. An action button inside an aria-live
+     region is an anti-pattern: the region gets re-announced and focus never moves to the control.
+     Keeping the button a sibling means the text is announced and the button is just a button. -->
+<div class="toast" id="toast"><span class="toast-msg" id="toastMsg" role="status" aria-live="polite"></span></div>
 
 <script>
 /*!
@@ -1103,6 +1120,30 @@ function fromDisplay(v){
   if(t==="")return 0;
   const n=parseFloat(t.replace(/[^0-9.eE+-]/g,""));
   return Number.isFinite(n)?n/fxRate():null;
+}
+// Commit an edited numeric cell, or reject it and say why. Returns the parsed number, or null
+// when the caller should leave `state` alone — the display has already been put back and the
+// user already told.
+//
+// An EMPTY cell is rejected rather than written as 0. fromDisplay("") returns 0, which is right
+// for a value the app computes with but wrong for one a user just cleared: it zeroed the account
+// outright, and the blur re-format (`if(el.value!=="")`) then declined to repaint the empty box,
+// so the cell went on *looking* empty while state held 0. Instant, silent, and invisible.
+// Typing an explicit 0 still sets zero.
+function commitNum(el,prev){
+  const raw=String(el.value==null?"":el.value).trim();
+  if(raw===""){
+    el.value=toDisplay(prev);
+    toast("Kept the previous value — type 0 if you meant zero.");
+    return null;
+  }
+  const n=fromDisplay(raw);
+  if(n==null){
+    el.value=toDisplay(prev);
+    toast("That isn't a number — kept the previous value.");
+    return null;
+  }
+  return n;
 }
 const fmt=n=>{const c=curInfo(),v=n*fxRate();return (v<0?"-":"")+c.symbol+Math.abs(Math.round(v)).toLocaleString();};
 const fmt2=n=>{const c=curInfo(),v=n*fxRate();return (v<0?"-":"")+c.symbol+Math.abs(v).toLocaleString(undefined,{minimumFractionDigits:c.decimals,maximumFractionDigits:c.decimals});};
@@ -1606,8 +1647,141 @@ const monthsUntil=d=>{
 const goalNeeded=g=>{const m=monthsUntil(g.targetDate);return (m==null||m<=0)?null:goalGap(g)/m;};
 
 /* ---------- toast ---------- */
-let toastT;
-function toast(msg){const t=document.getElementById("toast");t.textContent=msg;t.classList.add("show");clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove("show"),2600);}
+/* The app's single notification slot. It used to be literally single: a second toast() call
+   overwrote whatever was on screen, so "Fetching latest Treasury yields…" was routinely erased
+   by its own result two seconds later.
+
+   That was cosmetic while every message was disposable. It stopped being cosmetic when row
+   deletes started offering Undo here, because any unrelated toast would then silently destroy
+   the only route back from a misclick. Messages queue now.
+
+   An `action` renders a button beside the text. Its dismiss timer is longer than a plain
+   message's and pauses whenever the pointer or keyboard focus is inside the toast — a few
+   seconds is not a fair target for a recovery control (WCAG 2.2.1). Every action also has a
+   keyboard shortcut at its call site, because a toast is a poor thing to have to Tab to. */
+let toastQ=[], toastBusy=false, toastPaused=false, toastWired=false;
+const TOAST_MS=2600, TOAST_ACTION_MS=5000;
+function toast(msg,action){
+  if(action){
+    toastQ.push({msg,action});
+  }else{
+    // Plain messages do NOT stack up. An action toast is on screen for seconds, and a naive queue
+    // meant a burst of activity left the user reading notices about things they did ten seconds
+    // ago. Only the newest plain message is worth showing, so it replaces any plain message still
+    // waiting — while every action toast is preserved, since that is the offer we must not drop.
+    toastQ=toastQ.filter(x=>x.action);
+    toastQ.push({msg});
+  }
+  if(!toastBusy)toastNext();
+}
+function toastWire(el){
+  if(toastWired)return;
+  toastWired=true;
+  const hold=()=>{toastPaused=true;}, release=()=>{toastPaused=false;};
+  el.addEventListener("pointerenter",hold);
+  el.addEventListener("pointerleave",release);
+  el.addEventListener("focusin",hold);
+  el.addEventListener("focusout",release);
+}
+function toastNext(){
+  const el=document.getElementById("toast");
+  toastWire(el);
+  const item=toastQ.shift();
+  if(!item){toastBusy=false;el.classList.remove("show");return;}
+  toastBusy=true;toastPaused=false;
+  const msgEl=document.getElementById("toastMsg");
+  msgEl.textContent=item.msg;
+  // rebuild the trailing controls, leaving the live region itself in place
+  [...el.querySelectorAll(".toast-act,.toast-key")].forEach(n=>n.remove());
+  if(item.action){
+    const b=document.createElement("button");
+    b.type="button";b.className="toast-act";b.textContent=item.action.label;
+    b.addEventListener("click",()=>{const fn=item.action.onClick;toastHide();fn();});
+    el.appendChild(b);
+    if(item.action.key){
+      const k=document.createElement("span");
+      k.className="toast-key";k.textContent=item.action.key;
+      el.appendChild(k);
+    }
+  }
+  el.classList.add("show");
+  toastArm(item.action?TOAST_ACTION_MS:TOAST_MS);
+}
+let toastT=null;
+function toastArm(ms){
+  clearTimeout(toastT);
+  // A paused toast re-checks rather than dying — the user is reading it or reaching for it.
+  toastT=setTimeout(()=>{if(toastPaused){toastArm(600);return;}toastHide();},ms);
+}
+function toastHide(){
+  clearTimeout(toastT);
+  const el=document.getElementById("toast");
+  el.classList.remove("show");
+  setTimeout(toastNext,180);   // let it slide out before the next one slides in
+}
+
+/* ---------- row deletion, with one undo ----------
+   Four tables used to carry four copies of the same three lines:
+
+       const i=arr.findIndex(x=>x.id===id); arr.splice(i,1); save(); render(); toast("Row deleted");
+
+   Two things were wrong with that. First, `arr` was captured when the handler was wired, so it
+   could outlive the array it points at — importJSON() replaces `state` wholesale, and a handler
+   left over from the previous render then mutates a detached array. Second, and worse, there was
+   no -1 guard: when findIndex missed, splice(-1,1) removed the LAST row of the array instead, a
+   silent wrong-row deletion with no undo and no clue.
+
+   Resolving the array out of live `state` by a path string on every call fixes the first, and is
+   also what makes undo safe: an undo closure capturing `arr` would reintroduce exactly the bug
+   this replaces. So undoBuf holds a PATH, never a reference.
+
+   undoBuf is ephemeral in the chatConn / archiveSession sense — module-level, never written to
+   `state`, never persisted, never sanitized, and deliberately cleared by importJSON(). A restore
+   offer that survived a page load would be pointing into a dataset that no longer exists. */
+const ROW_PATHS={
+  assets:      {label:"Assets",      render:()=>{renderLedger();renderTape();}},
+  liabilities: {label:"Liabilities", render:()=>{renderLedger();renderTape();}},
+  goals:       {label:"Goals",       render:renderGoals},
+  calendar:    {label:"Calendar",    render:renderCalendar},
+  "budget.income":  {label:"Cash in",  render:renderBudget},
+  "budget.expenses":{label:"Cash out", render:renderBudget}
+};
+let undoBuf=null;
+// own() rather than a bare lookup: ROW_PATHS["constructor"] is truthy on a plain object.
+const rowMeta=path=>own(ROW_PATHS,path)?ROW_PATHS[path]:null;
+function rowsAt(path){
+  if(!rowMeta(path))return null;
+  const arr=path==="budget.income"?state.budget.income
+           :path==="budget.expenses"?state.budget.expenses
+           :state[path];
+  return Array.isArray(arr)?arr:null;
+}
+const UNDO_KEY=/Mac|iPhone|iPad/.test(navigator.platform||navigator.userAgent||"")?"⌘Z":"Ctrl+Z";
+function deleteRow(path,id){
+  const meta=rowMeta(path), arr=rowsAt(path);
+  if(!meta||!arr)return;
+  const i=arr.findIndex(x=>x.id===id);
+  if(i<0){toast("That row is already gone.");return;}
+  const row=arr.splice(i,1)[0];
+  undoBuf={path,index:i,row};
+  save();
+  meta.render();
+  // Name the table: the toast is global, so an undo fired after switching tabs would otherwise
+  // be a mystery about which row is coming back.
+  toast(meta.label+" — row deleted.",{label:"Undo",key:UNDO_KEY,onClick:undoDelete});
+}
+function undoDelete(){
+  if(!undoBuf)return false;
+  const {path,index,row}=undoBuf;
+  undoBuf=null;
+  const meta=rowMeta(path), arr=rowsAt(path);
+  if(!meta||!arr){toast("That row can't be put back — the data it belonged to has changed.");return true;}
+  arr.splice(Math.min(index,arr.length),0,row);   // the list may be shorter than when it left
+  save();
+  meta.render();
+  toast(meta.label+" — row restored.");
+  return true;
+}
 
 /* ---------- currencies ---------- */
 const CURRENCIES={
@@ -1943,8 +2117,8 @@ function wireCells(){
       const f=el.dataset.f;
       el.addEventListener("change",()=>{
         if(f==="value"){
-          const n=fromDisplay(el.value);
-          if(n==null){el.value=toDisplay(item.value);toast("That isn't a number — kept the previous value.");return;}
+          const n=commitNum(el,item.value);
+          if(n==null)return;
           item.value=n;
           state.updated=today();   // the stale-data banner counts from the last ledger edit, not only from snapshots
         }else item[f]=el.value;
@@ -1955,9 +2129,7 @@ function wireCells(){
       });
       if(f==="value")el.addEventListener("blur",()=>{if(el.value!=="")el.value=toDisplay(item.value);});
     });
-    tr.querySelector(".del").addEventListener("click",()=>{
-      const i=arr.findIndex(x=>x.id===id);arr.splice(i,1);save();renderLedger();toast("Row deleted");
-    });
+    tr.querySelector(".del").addEventListener("click",()=>deleteRow(kind==="asset"?"assets":"liabilities",id));
   });
 }
 
@@ -2073,18 +2245,15 @@ function wireGoalRows(){
       const f=el.dataset.gf,numeric=f==="target"||f==="monthly";
       el.addEventListener("change",()=>{
         if(numeric){
-          const n=fromDisplay(el.value);
-          if(n==null){el.value=toDisplay(g[f]);toast("That isn't a number — kept the previous value.");return;}
+          const n=commitNum(el,g[f]);
+          if(n==null)return;
           g[f]=n;
         }else g[f]=el.value;
         save();renderGoals();
       });
       if(numeric)el.addEventListener("blur",()=>{if(el.value!=="")el.value=toDisplay(g[f]);});
     });
-    tr.querySelector(".del").addEventListener("click",()=>{
-      const i=state.goals.findIndex(x=>x.id===id);state.goals.splice(i,1);
-      save();renderGoals();toast("Goal deleted");
-    });
+    tr.querySelector(".del").addEventListener("click",()=>deleteRow("goals",id));
   });
 }
 
@@ -2110,8 +2279,8 @@ function wireBudgetRows(){
       const numeric=f==="amount"||f==="limit";
       el.addEventListener("change",()=>{
         if(numeric){
-          const n=fromDisplay(el.value);
-          if(n==null){el.value=toDisplay(item[f]);toast("That isn't a number — kept the previous value.");return;}
+          const n=commitNum(el,item[f]);
+          if(n==null)return;
           item[f]=n;
         }else item[f]=el.value;
         save();
@@ -2131,9 +2300,7 @@ function wireBudgetRows(){
         el.addEventListener("blur",()=>{if(el.value!=="")el.value=toDisplay(item[f]);});
       }
     });
-    tr.querySelector(".del").addEventListener("click",()=>{
-      const i=arr.findIndex(x=>x.id===id);arr.splice(i,1);save();renderBudget();toast("Row deleted");
-    });
+    tr.querySelector(".del").addEventListener("click",()=>deleteRow(section==="income"?"budget.income":"budget.expenses",id));
     wireBudgetDrag(tr);
   });
 }
@@ -2698,9 +2865,7 @@ function renderCalendar(){
     tr.querySelectorAll("[data-cf]").forEach(el=>{
       el.addEventListener("change",()=>{e[el.dataset.cf]=el.value;save();if(el.dataset.cf==="date"||el.dataset.cf==="imp")renderCalendar();});
     });
-    tr.querySelector(".del").addEventListener("click",()=>{
-      state.calendar=state.calendar.filter(x=>x.id!==id);save();renderCalendar();toast("Event removed");
-    });
+    tr.querySelector(".del").addEventListener("click",()=>deleteRow("calendar",id));
   });
   applyLiveCalHeight();
 }
@@ -3466,6 +3631,9 @@ function importJSON(file){
       const d=JSON.parse(r.result);
       if(!d||typeof d!=="object"||!Array.isArray(d.assets))throw 0;
       state=sanitizeState(d);
+      // A pending Undo points at a row from the dataset being replaced. Honouring it after an
+      // import would splice a stranger's row into the newly imported ledger.
+      undoBuf=null;
       normalizeBudget();normalizeAddons();
       boot(true);
       save();
@@ -3623,6 +3791,65 @@ function clearStoredData(){
     if(LEGACY_KEY)localStorage.removeItem(LEGACY_KEY);
   }catch(e){/* private windows can throw on access; nothing was persisted anyway */}
 }
+// "Is there anything here worth protecting?" Budget rows are excluded on purpose: every build
+// seeds them, so they are present on a brand-new install and say nothing about whether the user
+// has actually put work in. Also used to decide whether to offer example data (see ⚙).
+const hasUserData=()=>!!(state.assets.length||state.liabilities.length||state.history.length||
+  state.goals.length||state.calendar.length||
+  (state.chat&&state.chat.messages&&state.chat.messages.length)||
+  (state.archive&&state.archive.count));
+
+/* Import replaces the entire dataset, and the button that starts it sits one click from Export
+   and Refresh in the topbar. It used to go straight through: pick a file and every asset,
+   liability, budget row, goal, snapshot, calendar entry and setting was overwritten and
+   persisted, with no prompt and no way back. Reset gates the very same outcome behind a typed
+   phrase, so the two destructive paths disagreed wildly about how much the user's data is worth.
+
+   This is deliberately a lighter gate than Reset's: the user picked a specific file and has a
+   copy of it, whereas Reset leaves nothing anywhere. It names the file, says what goes, and
+   offers the export. On a genuinely empty install there is nothing to lose, so it doesn't ask. */
+function showImportConfirm(file,proceed){
+  if(!hasUserData()){proceed();return;}
+  const panel=document.createElement("div");
+  panel.className="intro-wipe hold danger";
+  panel.setAttribute("role","dialog");
+  panel.setAttribute("aria-modal","true");
+  panel.setAttribute("aria-label","Replace your data with an imported backup");
+  panel.innerHTML=`<div class="welcome">
+    <h1>Replace everything?</h1>
+    <div class="wc-sub">Importing <b>${esc(file.name||"that file")}</b> overwrites what's in SomiFinance now.</div>
+    <div class="wc-warn">
+      Your current <b>assets, liabilities, budget, savings goals, snapshot history and calendar</b>
+      are replaced by whatever the file holds, along with your name, theme, language and currency.<br><br>
+      The file you're importing isn't changed. What's in the browser right now is, and
+      <b>that can't be undone</b> — export it first if you might want it back.
+    </div>
+    <div class="wc-field">
+      <button type="button" class="wc-alt" id="imExport">⭳ Export what's here first</button>
+    </div>
+    <div class="wc-actions">
+      <button type="button" class="wc-go" id="imGo">Replace my data</button>
+      <button type="button" class="wc-skip" id="imCancel">Cancel</button>
+    </div>
+  </div>`;
+  document.body.appendChild(panel);
+  const close=()=>{
+    document.removeEventListener("keydown",onEsc,true);
+    panel.classList.add("closing");
+    setTimeout(()=>panel.remove(),320);
+    const b=document.getElementById("importBtn");
+    if(b)b.focus();
+  };
+  // named onEsc, never esc — showResetConfirm()'s handler is called esc and shadows the global
+  // escaper for its whole body; don't repeat that here
+  const onEsc=e=>{if(e.key==="Escape"){e.preventDefault();close();}};
+  panel.querySelector("#imGo").addEventListener("click",()=>{close();proceed();});
+  panel.querySelector("#imCancel").addEventListener("click",close);
+  panel.querySelector("#imExport").addEventListener("click",exportJSON);
+  document.addEventListener("keydown",onEsc,true);
+  panel.querySelector("#imCancel").focus();   // immediately, not on a timer — see showArchiveDialog
+}
+
 function showResetConfirm(){
   const panel=document.createElement("div");
   panel.className="intro-wipe hold danger";
@@ -4682,6 +4909,14 @@ function init(){
 
   document.addEventListener("keydown",e=>{
     if(e.key==="Escape"){closeMenu();closeThemeMenu();closeChatPanel();}
+    // Undo the last row delete. A toast button is a poor sole recovery affordance for a keyboard
+    // user — it is a few seconds long and focus never moves to it — so the same action has a
+    // shortcut. Skipped while typing, where the browser's own text undo has to win.
+    if((e.metaKey||e.ctrlKey)&&!e.shiftKey&&!e.altKey&&(e.key==="z"||e.key==="Z")){
+      if(/input|select|textarea/i.test((document.activeElement||{}).tagName||""))return;
+      if(undoBuf&&undoDelete())e.preventDefault();
+      return;
+    }
     // not while a dialog or the hint tour owns the screen — every one of them holds focus on a
     // BUTTON, which the tag test alone lets through, and switching tabs under a modal breaks both
     if(document.querySelector(".intro-wipe.hold, .hint-card"))return;
@@ -4704,7 +4939,11 @@ function init(){
   });
   document.getElementById("exportBtn").addEventListener("click",exportJSON);
   document.getElementById("importBtn").addEventListener("click",()=>document.getElementById("importFile").click());
-  document.getElementById("importFile").addEventListener("change",e=>{if(e.target.files[0])importJSON(e.target.files[0]);e.target.value="";});
+  document.getElementById("importFile").addEventListener("change",e=>{
+    const f=e.target.files[0];
+    e.target.value="";   // reset first, so picking the same file twice still fires a change
+    if(f)showImportConfirm(f,()=>importJSON(f));
+  });
   document.getElementById("archFile").addEventListener("change",e=>{if(e.target.files[0])loadArchive(e.target.files[0]);e.target.value="";});
 
   // add rows
