@@ -27,7 +27,7 @@
 -->
 <meta http-equiv="Content-Security-Policy" content="
   default-src 'none';
-  script-src 'sha256-LEfI6wtiATeJWC0ehfYamH0fHWvD5leT9b99SJsRVXU=' 'sha256-RI8jHo+7YYA4kZ81ftOUHAo7ontrA2F6PDxkFJ4RwQo=' https://s3.tradingview.com;
+  script-src 'sha256-LEfI6wtiATeJWC0ehfYamH0fHWvD5leT9b99SJsRVXU=' 'sha256-ZOh2hGIRPr96ZyINN5E6U7WdwEtGu73s24SKcW9mq38=' https://s3.tradingview.com;
   style-src 'unsafe-inline';
   img-src data: https:;
   connect-src https://home.treasury.gov https://api.bls.gov https://open.er-api.com http://127.0.0.1:* http://localhost:*;
@@ -358,6 +358,9 @@
   .read .rv{font-family:var(--mono);font-size:var(--v-read);font-weight:600}
   .read .rd{font-family:var(--mono);font-size:var(--t-fine);color:var(--faint)}
   .note{font-size:var(--t-small);color:var(--faint);line-height:1.5;margin-top:12px}
+  /* The chart-empty notes are written by a renderer and cleared to "" when there is data —
+     without this they'd keep their 12px margin and open a gap under a chart that is fine. */
+  .note:empty{display:none}
   .note b{color:var(--muted)}
 
   .imp{display:inline-block;font-family:var(--mono);font-size:var(--l-tag);letter-spacing:.06em;text-transform:uppercase;padding:2px 7px;border-radius:4px}
@@ -858,6 +861,7 @@
       <h3><span id="hBudgetFutureSpend">Future spend</span> <span class="tag">cost of discretionary</span></h3>
       <div class="read-row" id="futureReads"></div>
       <div class="chart-box tall"><canvas id="futureChart" role="img" aria-label="Line chart projecting the future value of discretionary spending if it were invested instead"></canvas></div>
+      <div class="note" id="futureChartNote"></div>
       <div class="mini-form">
         <label><span id="lblReturnPct">Return %</span><input type="number" step="0.1" id="fRate" placeholder="7"></label>
         <label><span id="lblYears">Years</span><input type="number" step="1" id="fYears" placeholder="30"></label>
@@ -872,6 +876,7 @@
       <h3><span id="hMacroLongBond">Long-bond rate — your real-rate gauge</span> <span class="tag">10 / 20 / 30 yr</span></h3>
       <div class="read-row" id="yieldReads"></div>
       <div class="chart-box tall"><canvas id="yieldChart" role="img" aria-label="Line chart of 10, 20 and 30 year Treasury yields over time"></canvas></div>
+      <div class="note" id="yieldChartNote"></div>
       <div class="mini-form" id="yieldForm">
         <label>Date<input type="date" id="yDate"></label>
         <label>10yr %<input type="number" step="0.01" id="y10" placeholder="4.69"></label>
@@ -886,12 +891,14 @@
         <h3><span id="hMacroRealYield">Real yield</span> <span class="tag">10yr nominal − CPI</span></h3>
         <div class="read-row" id="realReads"></div>
         <div class="chart-box"><canvas id="realChart" role="img" aria-label="Line chart of real yield, ten year nominal minus inflation"></canvas></div>
+        <div class="note" id="realChartNote"></div>
         <div class="note">Computed from the two series you maintain. Positive = bonds pay above inflation; negative = you're losing purchasing power holding them.</div>
       </div>
       <div class="panel">
         <h3><span id="hMacroInflation">Inflation</span> <span class="tag">CPI year-over-year</span></h3>
         <div class="read-row" id="infReads"></div>
         <div class="chart-box"><canvas id="infChart" role="img" aria-label="Line chart of year over year CPI inflation"></canvas></div>
+        <div class="note" id="infChartNote"></div>
         <div class="mini-form" id="infForm">
           <label>Date<input type="date" id="iDate"></label>
           <label>CPI YoY %<input type="number" step="0.01" id="iVal" placeholder="3.2"></label>
@@ -943,6 +950,11 @@
 
     <div class="panel" style="margin-bottom:16px">
       <h3>Credits <span class="tag">open source</span></h3>
+      <div class="credit-item">
+        <span class="cn"><a href="https://github.com/mDemarco12/SomiFinance/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">SomiFinance ↗</a></span>
+        <span class="cd">This app. Free to use, copy and modify — the licence text is in the repository, and it covers the bundled work listed below as well.</span>
+        <span class="cl">MIT</span>
+      </div>
       <div class="credit-item">
         <span class="cn"><a href="https://github.com/catppuccin" target="_blank" rel="noopener noreferrer">Catppuccin ↗</a></span>
         <span class="cd">The pastel palettes behind four of the five themes — Mocha, Macchiato, Frappé and Latte. The default Terminal theme is SomiFinance's own.</span>
@@ -1097,6 +1109,9 @@ const tickMoneyK=v=>curInfo().symbol+((+v)*fxRate()/1000).toFixed(0)+"k";
 // LOCAL calendar date. toISOString() is UTC, which stamped tomorrow's date on every snapshot,
 // calendar row and export filename for evening users west of Greenwich.
 const today=()=>{const d=new Date();return new Date(d.getTime()-d.getTimezoneOffset()*6e4).toISOString().slice(0,10);};
+// today() shifted by n days, same local-civil-date handling. Used by the seeded calendar so its
+// rows are generated when the file is first opened rather than written as literals at build time.
+const dayOffset=n=>{const d=new Date();d.setDate(d.getDate()+n);return new Date(d.getTime()-d.getTimezoneOffset()*6e4).toISOString().slice(0,10);};
 // Quarters have two forms, kept apart on purpose. Stored: "2026-Q3" — sortable, unambiguous,
 // century-proof; this is what goes in an archive file. Displayed: "Q3 26", standard finance
 // shorthand. Never store the display form.
@@ -1191,6 +1206,24 @@ const clampSetScale=s=>Math.round(Math.min(SET_SCALE_MAX,Math.max(SET_SCALE_MIN,
 
    This whole function is a @variant block: build.py swaps it wholesale for the end-user and
    personal builds. Anything OUTSIDE the markers is shared by all three. */
+
+// Three example calendar rows for a brand-new install, so the Calendar tab has something in it.
+// It lives OUTSIDE the @variant markers because build.py rewrites seed() wholesale and the
+// end-user build needs this; the demo seeds its own richer calendar instead.
+//
+// Dates are computed on first open, never written as literals. The previous seed carried three
+// hardcoded September-2026 dates with the author's note "verify date" in the notes column —
+// by the time anyone downloaded the file two of them were already in the past and rendered
+// greyed-out, so a stranger's first look at the tab was stale rows plus a developer artifact.
+// Offline we genuinely cannot know the real schedule, so the rows say so and point at the source
+// rather than presenting a guess as fact.
+function nextReleases(){
+  return [
+    {id:uid(),date:dayOffset(7), event:"Nonfarm payrolls",  imp:"High",notes:"Example row — set the real date from bls.gov"},
+    {id:uid(),date:dayOffset(14),event:"CPI release",       imp:"High",notes:"Example row — set the real date from bls.gov"},
+    {id:uid(),date:dayOffset(28),event:"FOMC rate decision",imp:"High",notes:"Example row — set the real date from federalreserve.gov"}
+  ];
+}
 /* @variant:begin seed */
 // Dates run backwards from today() rather than being written as literals, so the demo's
 // net-worth curve is never stale no matter when someone opens it.
@@ -1925,11 +1958,20 @@ function renderOverview(){
   if(pts.length>1){
     line("nwChart",pts.map(p=>p.date),[mk("Net worth",pts.map(p=>p.net),P().accent)],
       baseOpts({plugins:{legend:{display:false}},scales:{x:{grid:{color:CH_GRID()},ticks:{color:CH_TICK(),font:{family:"ui-monospace,monospace",size:10},maxRotation:0,autoSkip:true,maxTicksLimit:8}},y:{grid:{color:CH_GRID()},ticks:{color:CH_TICK(),font:{family:"ui-monospace,monospace",size:10},callback:v=>tickMoneyK(v)}}}}));
-    note.textContent="";
+    // One logged point plus the live one draws a flat two-point segment. That is honest, but it
+    // reads like a rendering fault without a word of explanation, so the note stays until there
+    // are two real points to join.
+    note.innerHTML=h.length===1
+      ?"First snapshot logged. The curve takes shape from the second one on — hit <b>Refresh</b> here whenever you update your figures."
+      :"";
   }else{
     if(charts["nwChart"]){charts["nwChart"].destroy();delete charts["nwChart"];}
     const c=document.getElementById("nwChart");if(c&&c.getContext){c.getContext("2d").clearRect(0,0,c.width,c.height);}
-    note.innerHTML="One snapshot logged so far. Each <b>Refresh</b> adds a dated point — the curve builds as you use it.";
+    // h.length is always 0 here: pts always carries the live point, so a single logged snapshot
+    // already puts us in the branch above. This read "One snapshot logged so far", which was
+    // therefore false for every user who ever saw it — and it is the first sentence on the
+    // landing tab of a fresh install.
+    note.innerHTML="No snapshots yet. Hit <b>Refresh</b> on this tab to log today's net worth — each one adds a dated point, and the curve builds from there.";
   }
   renderArchive();
 }
@@ -2025,7 +2067,14 @@ function renderBudget(){
   ["income","expense"].forEach(section=>{
     const body=document.getElementById(section==="income"?"cashInBody":"cashOutBody");
     const arr=budgetArr(section);
-    body.innerHTML=arr.map(r=>budgetRowHTML(r,section)).join("")+
+    // These were the only editable tables in the app with no empty state, and the widest — an
+    // empty array rendered as a bare 8-column header over a 0.00 footer, which reads as broken.
+    // A user reaches this by deleting every row in a section, and a business-goal install starts
+    // here for any section businessBudget() leaves out.
+    const none=section==="income"
+      ?`<tr><td colspan="8"><div class="empty">No income rows. Add what comes in each month — salary, dividends, anything recurring.</div></td></tr>`
+      :`<tr><td colspan="8"><div class="empty">No expense rows. Add what goes out each month to see spend against limits.</div></td></tr>`;
+    body.innerHTML=(arr.length?arr.map(r=>budgetRowHTML(r,section)).join(""):none)+
       `<tr class="add-tr"><td class="add-row-cell" colspan="8"><button class="add-row" data-addbudget="${section}">+ ${t("budget.addRow")}</button></td></tr>`;
   });
   updateBudgetTotals();
@@ -2266,8 +2315,23 @@ function renderFutureChart(){
   const years=clampYears(a.years),rate=clampRate(a.rate);
   const fv=futureValue(pmt,rate,years);
   const contributed=pmt*12*years;
+  // Count distinct categories, not rows. The label says "categories" and this counted matching
+  // rows, so two discretionary rows both filed under Eating out read as "across 2 categories".
+  const discCats=new Set(state.budget.expenses.filter(e=>e.kind==="discretionary"&&+e.amount>0).map(e=>e.cat)).size;
+  // With nothing discretionary, every series is flat zero: two lines pinned to the axis for
+  // thirty years under the reads "If invested instead $0 / Growth forgone $0 beyond the $0
+  // spent". Mathematically right, and it looks like the panel failed to load.
+  if(!(pmt>0)){
+    document.getElementById("futureReads").innerHTML="";
+    chartEmpty("futureChart","futureChartNote","Nothing discretionary to project yet. Mark a spending row <b>Discretionary</b> in the Type column and give it an amount — this panel then shows what that money would be worth invested instead.");
+    const rEl0=document.getElementById("fRate"),yEl0=document.getElementById("fYears");
+    if(document.activeElement!==rEl0)rEl0.value=a.rate;
+    if(document.activeElement!==yEl0)yEl0.value=a.years;
+    return;
+  }
+  chartNoteClear("futureChartNote");
   document.getElementById("futureReads").innerHTML=
-    `<div class="read"><span class="rl">Discretionary / mo</span><span class="rv" style="color:${pal.peach}">${fmt(pmt)}</span><span class="rd">across ${state.budget.expenses.filter(e=>e.kind==="discretionary").length} categories</span></div>`+
+    `<div class="read"><span class="rl">Discretionary / mo</span><span class="rv" style="color:${pal.peach}">${fmt(pmt)}</span><span class="rd">across ${discCats} ${discCats===1?"category":"categories"}</span></div>`+
     `<div class="read"><span class="rl">If invested instead</span><span class="rv" style="color:${pal.up}">${fmt(fv)}</span><span class="rd">${years}yr @ ${rate}%</span></div>`+
     `<div class="read"><span class="rl">Growth forgone</span><span class="rv" style="color:${pal.violet}">${fmt(fv-contributed)}</span><span class="rd">beyond the ${fmt(contributed)} spent</span></div>`;
   const labels=[],diverted=[],invested=[];
@@ -2289,6 +2353,20 @@ function renderFutureChart(){
 }
 
 /* ---------- render: macro ---------- */
+// Charting an empty series leaves a bare grid with an auto 0–1 axis and no word of explanation,
+// which reads as a broken panel rather than an empty one. renderOverview() and renderSpendChart()
+// already solve this by destroying the chart and writing a line of copy; this is that pattern
+// pulled out so the three Macro panels can share it. Returns true when it handled the empty case.
+function chartEmpty(id,noteId,msg){
+  if(charts[id]){charts[id].destroy();delete charts[id];}
+  const c=document.getElementById(id);
+  if(c&&c.getContext)c.getContext("2d").clearRect(0,0,c.width,c.height);
+  const n=document.getElementById(noteId);
+  if(n)n.innerHTML=msg;
+  return true;
+}
+const chartNoteClear=noteId=>{const n=document.getElementById(noteId);if(n)n.innerHTML="";};
+
 function renderMacro(){
   const pal=P();
   const pctY=g=>({grid:{color:CH_GRID()},ticks:{color:CH_TICK(),font:{family:"ui-monospace,monospace",size:10},callback:v=>(+v).toFixed(2)+"%"}});
@@ -2299,18 +2377,28 @@ function renderMacro(){
       [["10-year",last.y10,pal.blue],["20-year",last.y20,pal.accent],["30-year",last.y30,pal.peach]]
       .map(([l,v,c])=>`<div class="read"><span class="rl">${l}</span><span class="rv" style="color:${c}">${v!=null?(+v).toFixed(2)+"%":"—"}</span><span class="rd">as of ${esc(last.date)}</span></div>`).join("");
   }else document.getElementById("yieldReads").innerHTML="";
-  line("yieldChart",y.map(p=>p.date),[
-    mk("10yr",y.map(p=>p.y10),pal.blue),
-    mk("20yr",y.map(p=>p.y20),pal.accent),
-    mk("30yr",y.map(p=>p.y30),pal.peach)
-  ],baseOpts({scales:{x:baseOpts().scales.x,y:pctY()}}));
+  if(!y.length){
+    chartEmpty("yieldChart","yieldChartNote","No yields recorded yet. Hit <b>Refresh</b> on this tab to pull the latest 10 / 20 / 30-year rates from the U.S. Treasury, or type a reading into the form below.");
+  }else{
+    chartNoteClear("yieldChartNote");
+    line("yieldChart",y.map(p=>p.date),[
+      mk("10yr",y.map(p=>p.y10),pal.blue),
+      mk("20yr",y.map(p=>p.y20),pal.accent),
+      mk("30yr",y.map(p=>p.y30),pal.peach)
+    ],baseOpts({scales:{x:baseOpts().scales.x,y:pctY()}}));
+  }
 
   const inf=[...state.inflation].sort((a,b)=>a.date<b.date?-1:1);
   const li=inf[inf.length-1];
   document.getElementById("infReads").innerHTML=li?
     `<div class="read"><span class="rl">CPI YoY</span><span class="rv" style="color:${pal.down}">${(+li.cpi).toFixed(2)}%</span><span class="rd">as of ${esc(li.date)}${li.note?" · "+esc(li.note):""}</span></div>`:"";
-  line("infChart",inf.map(p=>p.date),[mk("CPI YoY",inf.map(p=>p.cpi),pal.down)],
-    baseOpts({plugins:{legend:{display:false}},scales:{x:baseOpts().scales.x,y:pctY()}}));
+  if(!inf.length){
+    chartEmpty("infChart","infChartNote","No CPI readings yet. <b>Refresh</b> pulls the latest year-over-year figure from the BLS, or add one by hand below.");
+  }else{
+    chartNoteClear("infChartNote");
+    line("infChart",inf.map(p=>p.date),[mk("CPI YoY",inf.map(p=>p.cpi),pal.down)],
+      baseOpts({plugins:{legend:{display:false}},scales:{x:baseOpts().scales.x,y:pctY()}}));
+  }
 
   // real yield = 10yr nominal - nearest CPI
   const real=y.map(p=>{
@@ -2320,8 +2408,21 @@ function renderMacro(){
   const lastReal=real[real.length-1];
   document.getElementById("realReads").innerHTML=lastReal?
     `<div class="read"><span class="rl">Real 10yr</span><span class="rv" style="color:${lastReal.v>=0?pal.up:pal.down}">${lastReal.v.toFixed(2)}%</span><span class="rd">as of ${esc(lastReal.date)}</span></div>`:"";
-  line("realChart",real.map(p=>p.date),[mk("Real yield (10yr − CPI)",real.map(p=>p.v),pal.up)],
-    baseOpts({plugins:{legend:{display:false}},scales:{x:baseOpts().scales.x,y:pctY()}}));
+  if(!real.length){
+    // The most confusing empty panel in the app, because it has three different causes and the
+    // third one is genuinely non-obvious: real yield needs a CPI print dated at or BEFORE a
+    // yield reading, so a user who enters both series can still see nothing here if the only
+    // CPI figure they have postdates every yield they hold. Name the actual cause.
+    chartEmpty("realChart","realChartNote",
+      !y.length&&!inf.length?"Needs both series. Record some Treasury yields and a CPI reading — <b>Refresh</b> fetches both — and the real yield is worked out from them."
+      :!y.length?"Needs Treasury yields. Add some in the panel above and the real yield follows automatically."
+      :!inf.length?"Needs a CPI reading. Add one in the Inflation panel and the real yield follows automatically."
+      :"No overlap yet. Real yield subtracts the most recent CPI reading dated on or before each yield, and every CPI figure you have is newer than every yield. Add an earlier CPI reading, or a more recent yield.");
+  }else{
+    chartNoteClear("realChartNote");
+    line("realChart",real.map(p=>p.date),[mk("Real yield (10yr − CPI)",real.map(p=>p.v),pal.up)],
+      baseOpts({plugins:{legend:{display:false}},scales:{x:baseOpts().scales.x,y:pctY()}}));
+  }
 }
 
 /* ---------- macro live data (Treasury.gov + BLS — both CORS-open, no key) ---------- */
@@ -3687,11 +3788,13 @@ const HINTS=[
     startup:"Add what's missing — your funding round, a grant, outstanding invoices. Loans and convertible notes go in Liabilities below.",
     business:"Add what's missing — inventory, a business vehicle, outstanding invoices. Loans and credit lines go in Liabilities below.",
     other:"Add a row for anything this list is missing. Anything you owe goes in Liabilities, in the panel below."}},
-  {sel:'#refreshBtn',title:"Log your first snapshot",body:{
-    personal:"Once your numbers look right, hit Refresh on the Overview tab. That logs a dated point, and your net-worth chart builds from there.",
-    startup:"Once your numbers look right, hit Refresh on the Overview tab. Each snapshot is a dated point — that's how you'll watch runway move.",
-    business:"Once your numbers look right, hit Refresh on the Overview tab. Each snapshot is a dated point your equity curve builds from.",
-    other:"Once your numbers look right, hit Refresh on the Overview tab. That logs a dated point, and the chart builds itself from there."}}
+  // tab:"overview" is load-bearing — Refresh means something different on every tab, and this
+  // step is the one that tells the user to press it. See showHint().
+  {sel:'#refreshBtn',tab:"overview",title:"Log your first snapshot",body:{
+    personal:"This is Refresh, and you're now on Overview where it logs a dated point. Press it whenever your numbers look right — your net-worth chart builds from there.",
+    startup:"This is Refresh, and you're now on Overview where it logs a dated point. Press it whenever your numbers look right — that's how you'll watch runway move.",
+    business:"This is Refresh, and you're now on Overview where it logs a dated point. Press it whenever your numbers look right — your equity curve builds from there.",
+    other:"This is Refresh, and you're now on Overview where it logs a dated point. Press it whenever your numbers look right, and the chart builds itself from there."}}
 ];
 // The end-user build seeds an empty ledger, so the first two steps above have nothing to point
 // at — showHint()'s skip loop would silently drop them and leave a two-step tour whose copy
@@ -3708,6 +3811,10 @@ const HINTS_EMPTY=[
 // which list the tour is walking; set by startHints() from the state it finds
 let hintSteps=HINTS;
 let hintIdx=0, hintCard=null, hintReposition=null;
+// True only while a tour is actually on screen. endHints() reads it to decide whether the nudge
+// banner would be telling the user something they were just told — see endHints(). Ephemeral by
+// construction: never persisted, never sanitized, like chatConn and archiveSession.
+let hintsRan=false;
 function clearHintMarks(){
   document.querySelectorAll(".hint-target").forEach(el=>el.classList.remove("hint-target"));
 }
@@ -3721,7 +3828,13 @@ function endHints(){
   }
   document.removeEventListener("keydown",hintEsc,true);
   state.hintsDone=true;save();
-  maybeBanner();   // held back during the tour; safe to nudge now
+  // Held back during the tour. Still held back for the rest of THIS session if the tour actually
+  // walked: with an empty ledger the banner reads "Your ledger is empty — open the ledger, add
+  // your first account, then hit Refresh on Overview", which is verbatim what the two-step tour
+  // just finished saying, with the user standing on the tab it names. It fires normally from
+  // boot() on the next load, by which point it is a reminder rather than an echo.
+  if(!hintsRan)maybeBanner();
+  hintsRan=false;
 }
 function hintEsc(e){if(e.key==="Escape")endHints();}
 function placeHintCard(target){
@@ -3736,15 +3849,22 @@ function placeHintCard(target){
   hintCard.style.left=Math.max(12,left)+"px";
 }
 function showHint(i){
-  // a hint's own centring outranks the tab-switch scroll — otherwise the rAF loop
-  // drags the page back to 0 every frame while scrollIntoView tries to reach the target
-  cancelScrollAnim();
   clearHintMarks();
   // skip any step whose target isn't on the page
   while(i<hintSteps.length&&!document.querySelector(hintSteps[i].sel))i++;
   if(i<0||i>=hintSteps.length){endHints();return;}
   hintIdx=i;
-  const h=hintSteps[i], target=document.querySelector(h.sel);
+  const h=hintSteps[i];
+  // A step may name the tab its target actually works on. The snapshot step highlights the topbar
+  // Refresh button, which exists on every tab but only snapshots on Overview: the tour pointed at
+  // it from the Ledger while the copy read "hit Refresh on the Overview tab", so a user who
+  // pressed the button being pointed at got a no-op re-render and a toast, and no snapshot.
+  if(h.tab&&currentTab!==h.tab)show(h.tab);
+  // a hint's own centring outranks the tab-switch scroll — otherwise the rAF loop
+  // drags the page back to 0 every frame while scrollIntoView tries to reach the target.
+  // Must come AFTER the show() above, which starts a fresh scroll animation of its own.
+  cancelScrollAnim();
+  const target=document.querySelector(h.sel);
   const body=h.body[state.profile.goal]||h.body.personal;
   target.classList.add("hint-target");
   target.scrollIntoView({block:"center",behavior:"smooth"});
@@ -3782,6 +3902,7 @@ function startHints(){
   // the skip loop stays as a safety net for a target that disappears mid-tour.
   hintSteps=(state.assets.length?HINTS:HINTS_EMPTY).filter(h=>document.querySelector(h.sel));
   if(!hintSteps.length){endHints();return;}
+  hintsRan=true;
   hintReposition=()=>{const h=hintSteps[hintIdx];if(h)placeHintCard(document.querySelector(h.sel));};
   window.addEventListener("scroll",hintReposition,true);
   window.addEventListener("resize",hintReposition);

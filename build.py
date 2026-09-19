@@ -237,6 +237,15 @@ def build(src, variant, name):
 
 # ---------------------------------------------------------------- variant data
 
+class RawJS(str):
+    """A seed value that is JavaScript to emit verbatim, not data to JSON-encode.
+
+    seed_block() normally renders rows as object literals with quoted values. Wrapping a string
+    in RawJS says "this is already an expression" — used for calendar:nextReleases(), where the
+    rows must be built when the page first opens rather than frozen at build time.
+    """
+
+
 def storage_block(key, legacy):
     return (
         "// Each build gets its own key so opening one can never read or overwrite another's data —\n"
@@ -250,6 +259,8 @@ def storage_block(key, legacy):
 def seed_block(assets, liabilities, calendar, goals, profile, onboarded, note):
     """Render a seed() whose shared fields track the demo's — only data differs."""
     def rows(items):
+        if isinstance(items, RawJS):
+            return str(items)
         if not items:
             return "[]"
         out = []
@@ -280,8 +291,11 @@ function seed(){
     assets:%s,
     liabilities:%s,
     history:[],
-    yields:[{date:"2026-08-20",y10:4.69,y20:5.05,y30:5.23}],
-    inflation:[],   // empty like history — the Macro tab's empty state invites a Refresh
+    yields:[],      // was a single hardcoded 2026-08-20 reading: it rendered as three lone dots on
+                    // an otherwise empty chart, and the ticker tape reported it as the live 10/20/30yr
+                    // with no as-of date, so it read as current forever. Empty like history and
+                    // inflation; renderMacro()'s empty states invite a Refresh instead.
+    inflation:[],
     calendar:%s,
     goals:%s,
     chat:{ack:false,endpoint:"http://127.0.0.1:11434",model:"",messages:[]},
@@ -331,11 +345,12 @@ BUDGET_TEMPLATE = """function seedBudget(){
 }"""
 
 # Calendar releases are reference data, not user data — every build keeps them.
-RELEASES = [
-    {"date": "2026-09-04", "event": "Nonfarm payrolls (Aug)", "imp": "High", "notes": "verify date"},
-    {"date": "2026-09-10", "event": "CPI (Aug)", "imp": "High", "notes": "verify date"},
-    {"date": "2026-09-16", "event": "FOMC rate decision", "imp": "High", "notes": "verify date"},
-]
+# Not a list of rows any more. The seeded calendar used to be three hardcoded September-2026
+# dates carrying the note "verify date" — they shipped stale (two were already in the past by
+# release) and the note was a developer artifact rendered in a user-facing cell. nextReleases()
+# lives in the shared part of the page and computes its dates when the file is first opened, so
+# this stays a build-time constant and the output file stays byte-stable for --check.
+RELEASES = RawJS("nextReleases()")
 
 
 def demo_strings(title, watermark, key, calendar_note):

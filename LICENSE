@@ -27,6 +27,10 @@ under its own licence:
 
 - Chart.js v4.4.1 — MIT — https://github.com/chartjs/Chart.js
   Inlined into every build. Its MIT banner is preserved in the source.
+- @kurkle/color v0.3.2 — MIT — Copyright (c) 2018 Jukka Kurkela
+  https://github.com/kurkle/color
+  Bundled inside the Chart.js distribution above, under its own copyright. Its
+  MIT banner is preserved in the source alongside Chart.js's.
 - Catppuccin palettes — MIT — https://github.com/catppuccin
   Four of the five themes (Mocha, Macchiato, Frappe, Latte). The default
   Terminal theme is SomiFinance's own.

@@ -6,7 +6,7 @@ body:
     attributes:
       value: |
         Before opening this, it is worth skimming the **Could be done** section of
-        [PROJECT_STATUS.md](../blob/main/PROJECT_STATUS.md). Several common requests are listed
+        [PROJECT_STATUS.md](https://github.com/mDemarco12/SomiFinance/blob/main/PROJECT_STATUS.md). Several common requests are listed
         there, some with the reasoning for why they were tried and deliberately reverted.
 
   - type: textarea

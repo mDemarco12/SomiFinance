@@ -34,6 +34,14 @@ worth sending if you can show the mitigation fails, but the reasoning is documen
   it cannot read stored data or touch the page.
 - **Imported backups are untrusted input.** Every field is whitelisted and coerced by
   `sanitizeState()`, row ids are regenerated, and nothing is persisted until it renders cleanly.
+- **`connect-src` is not the only channel, and never was.** `img-src` allows `data:` and `https:`,
+  so script that did manage to run could build a tracking pixel and put figures in its URL. This is
+  known and accepted: the defence against it is `script-src`'s hashes-with-no-`'unsafe-inline'`,
+  which kills an injection before it can construct the tag. A report that assumes script execution
+  as its starting point needs to show how the script got to run.
+- **An archive is bound to the build that wrote it.** The cipher key is derived from the passphrase
+  plus a per-file random salt plus the build's `KEY` constant, so a file written by one build will
+  not open in another even with the correct passphrase. That is intended, not a bug.
 - **The quarterly archive is not a backup.** Entries are AES-256-GCM with PBKDF2-SHA256, chained by
   hash, with authenticated metadata. The passphrase is never stored anywhere and cannot be
   recovered. The `KEY` constant in the HTML is not a secret; it contributes build binding only.
