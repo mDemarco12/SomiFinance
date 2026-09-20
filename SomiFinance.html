@@ -30,7 +30,7 @@
 -->
 <meta http-equiv="Content-Security-Policy" content="
   default-src 'none';
-  script-src 'sha256-LEfI6wtiATeJWC0ehfYamH0fHWvD5leT9b99SJsRVXU=' 'sha256-M/Et6y+s6BoI74NEdXMXVER6ZjWyladJNApNlApIAFQ=' https://s3.tradingview.com;
+  script-src 'sha256-LEfI6wtiATeJWC0ehfYamH0fHWvD5leT9b99SJsRVXU=' 'sha256-+0Gf8i6HcbTVFuVo/q5mBKw0s/Kyf7K0qOgrGdaw5c0=' https://s3.tradingview.com;
   style-src 'unsafe-inline';
   img-src data: https:;
   connect-src https://home.treasury.gov https://api.bls.gov https://open.er-api.com http://127.0.0.1:* http://localhost:*;
@@ -2363,7 +2363,7 @@ function renderOverview(){
     dEl.textContent=(d>=0?"▲ ":"▼ ")+fmt(Math.abs(d));
     dEl.className="delta tnum "+(d>=0?"up":"down");
     sEl.textContent="since "+prev.date;
-  }else{dEl.textContent="";sEl.textContent="no snapshots yet — hit Refresh";}
+  }else{dEl.textContent="";sEl.textContent="no snapshots yet — press Refresh";}
 
   // allocation
   const ta=totalAssets()||1;
