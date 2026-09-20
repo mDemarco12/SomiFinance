@@ -30,7 +30,7 @@
 -->
 <meta http-equiv="Content-Security-Policy" content="
   default-src 'none';
-  script-src 'sha256-LEfI6wtiATeJWC0ehfYamH0fHWvD5leT9b99SJsRVXU=' 'sha256-pzYGwLL8LTMCQUBvUrXnL/YLy4VRQv3IG2Fx6qgx+qE=' https://s3.tradingview.com;
+  script-src 'sha256-LEfI6wtiATeJWC0ehfYamH0fHWvD5leT9b99SJsRVXU=' 'sha256-M/Et6y+s6BoI74NEdXMXVER6ZjWyladJNApNlApIAFQ=' https://s3.tradingview.com;
   style-src 'unsafe-inline';
   img-src data: https:;
   connect-src https://home.treasury.gov https://api.bls.gov https://open.er-api.com http://127.0.0.1:* http://localhost:*;
@@ -2408,7 +2408,7 @@ function renderOverview(){
     // reads like a rendering fault without a word of explanation, so the note stays until there
     // are two real points to join.
     note.innerHTML=h.length===1
-      ?"First snapshot logged. The curve takes shape from the second one on — hit <b>Refresh</b> here whenever you update your figures."
+      ?"First snapshot logged. The curve takes shape from the second one on — press <b>Refresh</b> here whenever you update your figures."
       :"";
   }else{
     if(charts["nwChart"]){charts["nwChart"].destroy();delete charts["nwChart"];}
@@ -2417,7 +2417,7 @@ function renderOverview(){
     // already puts us in the branch above. This read "One snapshot logged so far", which was
     // therefore false for every user who ever saw it — and it is the first sentence on the
     // landing tab of a fresh install.
-    note.innerHTML="No snapshots yet. Hit <b>Refresh</b> on this tab to log today's net worth — each one adds a dated point, and the curve builds from there.";
+    note.innerHTML="A snapshot is a dated record of what you were worth that day. <b>Refresh</b> logs one, and this chart is built from them — so it starts the first time you press it.";
   }
   renderArchive();
 }
@@ -2836,7 +2836,7 @@ function renderMacro(){
       .map(([l,v,c])=>`<div class="read"><span class="rl">${l}</span><span class="rv" style="color:${c}">${v!=null?(+v).toFixed(2)+"%":"—"}</span><span class="rd">as of ${esc(last.date)}</span></div>`).join("");
   }else document.getElementById("yieldReads").innerHTML="";
   if(!y.length){
-    chartEmpty("yieldChart","yieldChartNote","No yields recorded yet. Hit <b>Refresh</b> on this tab to pull the latest 10 / 20 / 30-year rates from the U.S. Treasury, or type a reading into the form below.");
+    chartEmpty("yieldChart","yieldChartNote","No yields recorded yet. Press <b>Refresh</b> on this tab to pull the latest 10 / 20 / 30-year rates from the U.S. Treasury, or type a reading into the form below.");
   }else{
     chartNoteClear("yieldChartNote");
     line("yieldChart",y.map(p=>p.date),[
@@ -2851,7 +2851,7 @@ function renderMacro(){
   document.getElementById("infReads").innerHTML=li?
     `<div class="read"><span class="rl">CPI YoY</span><span class="rv" style="color:${pal.down}">${(+li.cpi).toFixed(2)}%</span><span class="rd">as of ${esc(li.date)}${li.note?" · "+esc(li.note):""}</span></div>`:"";
   if(!inf.length){
-    chartEmpty("infChart","infChartNote","No CPI readings yet. <b>Refresh</b> pulls the latest year-over-year figure from the BLS, or add one by hand below.");
+    chartEmpty("infChart","infChartNote","No CPI readings yet. Press <b>Refresh</b> on this tab to pull the latest year-over-year figure from the BLS, or add one by hand below.");
   }else{
     chartNoteClear("infChartNote");
     line("infChart",inf.map(p=>p.date),[mk("CPI YoY",inf.map(p=>p.cpi),pal.down)],
