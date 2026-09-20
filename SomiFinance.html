@@ -30,7 +30,7 @@
 -->
 <meta http-equiv="Content-Security-Policy" content="
   default-src 'none';
-  script-src 'sha256-LEfI6wtiATeJWC0ehfYamH0fHWvD5leT9b99SJsRVXU=' 'sha256-+0Gf8i6HcbTVFuVo/q5mBKw0s/Kyf7K0qOgrGdaw5c0=' https://s3.tradingview.com;
+  script-src 'sha256-LEfI6wtiATeJWC0ehfYamH0fHWvD5leT9b99SJsRVXU=' 'sha256-o1RoO2G0YuRGS2iVTSzIpD34Ez9jEyxgaM4eHp182X0=' https://s3.tradingview.com;
   style-src 'unsafe-inline';
   img-src data: https:;
   connect-src https://home.treasury.gov https://api.bls.gov https://open.er-api.com http://127.0.0.1:* http://localhost:*;
@@ -457,11 +457,6 @@
   .note:empty{display:none}
   .note b{color:var(--muted)}
 
-  .imp{display:inline-block;font-family:var(--mono);font-size:var(--l-tag);letter-spacing:.06em;text-transform:uppercase;padding:2px 7px;border-radius:4px}
-  .imp.High{background:color-mix(in srgb,var(--down) 15%,transparent);color:var(--down)}
-  .imp.Med{background:color-mix(in srgb,var(--amber) 15%,transparent);color:var(--amber)}
-  .imp.Low{background:color-mix(in srgb,var(--muted) 12%,transparent);color:var(--muted)}
-  .imp.Personal{background:color-mix(in srgb,var(--violet) 15%,transparent);color:var(--violet)}
 
   .empty{color:var(--faint);font-size:var(--t-mid);text-align:center;padding:26px}
   .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(80px);background:var(--panel-2);border:1px solid var(--amber-dim);color:var(--ink);padding:11px 18px;border-radius:8px;font-size:13px;box-shadow:0 10px 30px rgba(0,0,0,.5);transition:transform .3s;z-index:60}
@@ -5359,6 +5354,21 @@ function initChat(){
    The way back is deliberately the existing reset: one destructive path, already gated and
    already correct, rather than a second one written for this. */
 function loadExampleData(){
+  // Re-check at the moment of the action, not just when the button was painted.
+  // renderExampleOffer() runs from boot(), so the button's visibility is a snapshot of the
+  // install taken at page load. Add your first asset without reloading — which is exactly what
+  // a new user does — and the offer is still sitting there, live, in a ⚙ menu that was never
+  // re-rendered. Clicking it then replaced that asset with twelve fake rows and saved.
+  //
+  // This guard is load-bearing precisely BECAUSE there is no confirm dialog: the whole argument
+  // for not having one is that the gate guarantees there is nothing to destroy. A gate that is
+  // only enforced at render time does not guarantee that, so the safety argument collapsed with
+  // it. Same reason it re-checks exampleData: loading twice would stack fake onto fake.
+  if(!isFreshInstall()||state.exampleData){
+    renderExampleOffer();   // the button was stale — take it away now
+    toastErr("Example data is only offered while your install is still empty.");
+    return;
+  }
   const a=demoAssets(), l=demoLiabilities();
   const net=sumRows(a)-sumRows(l), liab=sumRows(l);
   state.assets=a;
@@ -5515,7 +5525,10 @@ function init(){
   cog.addEventListener("click",e=>{
     e.stopPropagation();
     const open=tl.hidden;
-    if(open){setSectionCurrent();openSetSection(null);tl.scrollTop=0;}
+    // Recompute on open, not only on boot: adding a row elsewhere should take the example-data
+    // offer away without a reload. The guard inside loadExampleData() is the real protection;
+    // this is so the menu doesn't advertise something it will then refuse.
+    if(open){renderExampleOffer();setSectionCurrent();openSetSection(null);tl.scrollTop=0;}
     tl.hidden=!open;
     cog.setAttribute("aria-expanded",String(open));
   });
