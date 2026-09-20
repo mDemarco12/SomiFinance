@@ -27,7 +27,7 @@
 -->
 <meta http-equiv="Content-Security-Policy" content="
   default-src 'none';
-  script-src 'sha256-LEfI6wtiATeJWC0ehfYamH0fHWvD5leT9b99SJsRVXU=' 'sha256-veLF1asCI3QIlLiP8nYg09GMGFf4hJyTJxsD17XfxIY=' https://s3.tradingview.com;
+  script-src 'sha256-LEfI6wtiATeJWC0ehfYamH0fHWvD5leT9b99SJsRVXU=' 'sha256-Ch7X5euF5keWPXNGcxi1/IyAAn0o++CLJEKtxL2n4bw=' https://s3.tradingview.com;
   style-src 'unsafe-inline';
   img-src data: https:;
   connect-src https://home.treasury.gov https://api.bls.gov https://open.er-api.com http://127.0.0.1:* http://localhost:*;
@@ -90,6 +90,36 @@
     --v-icon:clamp(16px,calc(11px + 0.42vw),21px);     /* row delete glyph          */
 
     --panel-pad:clamp(18px,calc(6.5px + 0.98vw),30px);
+
+    /* Motion. The file had six durations and five easings scattered inline, two of them with no
+       timing function at all, in a :root that is otherwise entirely token-driven. These are the
+       three speeds anything here needs: --dur-fast for a state change under the pointer,
+       --dur-base for something entering or leaving, --dur-slow for the intro sweep. */
+    --dur-fast:.15s;
+    --dur-base:.3s;
+    --dur-slow:.72s;
+    --ease:cubic-bezier(.4,0,.2,1);          /* general-purpose */
+    --ease-sweep:cubic-bezier(.62,0,.32,1);  /* the intro wipe's own curve */
+  }
+  /* Interactive surfaces animate their hover/focus state. Before this only three carets and the
+     toast moved, so every button, row and cell snapped between colours — the single biggest
+     reason the app read as unfinished rather than plain. Only colour-ish properties are
+     transitioned: layout properties would make re-renders visibly lag. */
+  .act,.menu-btn,.menu-item,.theme-opt,.add-row,.del,.cell,select.cell,.set-input,
+  .tape-pause,.set-danger button,.chat-fab,.cp-badge,.cp-icon,.cp-model,.cp-copy,.cp-send,
+  .toast-act,.reorder-handle,.resize-grip,.row-drag,tbody tr,.arch-row td{
+    transition:background-color var(--dur-fast) var(--ease),
+               border-color var(--dur-fast) var(--ease),
+               color var(--dur-fast) var(--ease),
+               opacity var(--dur-fast) var(--ease);
+  }
+  /* Data bars get their width written inline on every render, so they jumped to a new length. */
+  .alloc-item .bar>i,.g-bar>i{transition:width var(--dur-base) var(--ease)}
+  @media (prefers-reduced-motion:reduce){
+    .act,.menu-btn,.menu-item,.theme-opt,.add-row,.del,.cell,select.cell,.set-input,
+    .tape-pause,.set-danger button,.chat-fab,.cp-badge,.cp-icon,.cp-model,.cp-copy,.cp-send,
+    .toast-act,.reorder-handle,.resize-grip,.row-drag,tbody tr,.arch-row td,
+    .alloc-item .bar>i,.g-bar>i{transition:none}
   }
   *{box-sizing:border-box}
   html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.5}
@@ -111,6 +141,11 @@
   .act{background:var(--panel-2);border:1px solid var(--line);color:var(--ink);padding:7px 13px;border-radius:6px;font-size:13px;cursor:pointer;display:inline-flex;align-items:center;gap:6px}
   .act:hover{border-color:var(--amber-dim);color:var(--amber)}
   .act.primary{background:var(--amber);color:#1a1206;border-color:var(--amber);font-weight:600}
+  /* refreshMacroData() sets btn.disabled for a fetch the code itself notes can take 9-15s,
+     but .act had no [disabled] rule, so the button kept full-opacity text and a pointer
+     cursor throughout and looked completely unchanged. Matches .wc-go[disabled]. */
+  .act[disabled],.act[disabled]:hover{opacity:.45;cursor:not-allowed;border-color:var(--line);color:var(--ink)}
+  .act.primary[disabled],.act.primary[disabled]:hover{color:#1a1206;border-color:var(--amber)}
   .act.primary:hover{color:#1a1206;filter:brightness(1.08)}
   .act:focus-visible{outline:2px solid var(--amber);outline-offset:2px}
   /* Everything else that is a restyled <button>. These carried no focus style at all, so a
@@ -206,6 +241,7 @@
   .resize-grip.set-scale-grip{position:static;width:calc(18px * var(--set-scale,1));height:calc(18px * var(--set-scale,1));cursor:nesw-resize}
   body.resizing-set,body.resizing-set *{cursor:nesw-resize!important;user-select:none}
   .set-input:focus{outline:none;border-color:var(--amber)}
+  .set-input:focus-visible{outline:2px solid var(--amber);outline-offset:1px}
   .theme-opt[aria-current="true"] .chk{opacity:1}
 
   /* ticker tape */
@@ -238,7 +274,10 @@
   .tab{display:none} .tab.active{display:block}
 
   /* banner */
-  .banner{display:flex;align-items:center;gap:14px;background:linear-gradient(90deg,rgba(224,168,59,.12),rgba(224,168,59,.03));border:1px solid var(--amber-dim);border-radius:10px;padding:12px 16px;margin-bottom:20px}
+  .banner{display:flex;align-items:center;gap:14px;background:linear-gradient(90deg,color-mix(in srgb,var(--amber) 12%,transparent),color-mix(in srgb,var(--amber) 3%,transparent));border:1px solid var(--amber-dim);border-radius:10px;padding:12px 16px;margin-bottom:20px}
+  /* A failure must not wear the same amber as "you haven't updated in 7 days". #updateBanner
+     is reused for both, and showSaveBlocked() puts an unrecoverable data-loss warning in it. */
+  .banner.bad{background:linear-gradient(90deg,color-mix(in srgb,var(--down) 16%,transparent),color-mix(in srgb,var(--down) 4%,transparent));border-color:var(--down)}
   .banner .b-ico{font-size:18px}
   .banner .b-txt{flex:1;font-size:var(--t-body);color:var(--ink)}
   .banner .b-txt b{color:var(--amber)}
@@ -283,7 +322,9 @@
   .about-id .who{font-size:20px;font-weight:600;font-family:var(--mono);letter-spacing:.01em}
   .about-id .role{color:var(--muted);font-size:var(--t-mid);margin-top:2px}
   .about-id .lnk{margin-top:8px;font-size:var(--t-mid)}
-  .credit-item{display:flex;gap:12px;padding:11px 0;border-bottom:1px solid rgba(35,44,57,.5);font-size:var(--t-body);flex-wrap:wrap}
+  /* colour-mix off --line, not a frozen copy of the dark theme's value: applyTheme() only
+     rewrites custom properties, so a literal here stays dark on Latte */
+  .credit-item{display:flex;gap:12px;padding:11px 0;border-bottom:1px solid color-mix(in srgb,var(--line) 55%,transparent);font-size:var(--t-body);flex-wrap:wrap}
   .credit-item:last-child{border-bottom:none}
   .credit-item .cn{flex:none;width:150px;font-weight:600}
   .credit-item .cd{flex:1;min-width:220px;color:var(--muted);font-size:var(--t-mono);line-height:1.5}
@@ -337,13 +378,25 @@
      padding (~20px, whatever the column widths are) of the next left-aligned header — Budget's
      LIMIT and TYPE read as one jammed pair. Header alignment is deliberately independent of cell
      alignment here; .cell.num / tfoot td.num / .sec-head td.num below keep the FIGURES right. */
-  tbody td{padding:2px;border-bottom:1px solid rgba(35,44,57,.5)}
-  tbody tr:hover{background:rgba(26,33,44,.4)}
+  tbody td{padding:2px;border-bottom:1px solid color-mix(in srgb,var(--line) 55%,transparent)}
+  tbody tr:hover{background:color-mix(in srgb,var(--panel-2) 45%,transparent)}
   .cell{width:100%;background:transparent;border:1px solid transparent;color:var(--ink);padding:8px;border-radius:5px;font-size:var(--t-body);font-family:var(--sans)}
   .cell:hover{border-color:var(--line)}
+  /* These five used outline:none + a 1px border where the rest of the app uses a 2px ring with
+     an offset, and keyed off :focus rather than :focus-visible. The border is kept because it
+     reads well while typing; the ring is added back so a keyboard user gets the same signal
+     here as everywhere else. .cell is the main data-entry surface, dozens per screen. */
   .cell:focus{outline:none;border-color:var(--amber);background:var(--panel-2)}
+  .cell:focus-visible{outline:2px solid var(--amber);outline-offset:1px}
   .cell.num{text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums}
-  select.cell{cursor:pointer;appearance:none}
+  /* appearance:none removed the native arrow and nothing replaced it, so the category selects
+     in three tables had no affordance that they were dropdowns at all. */
+  select.cell{cursor:pointer;appearance:none;padding-right:18px;
+    background-image:linear-gradient(45deg,transparent 50%,var(--faint) 50%),linear-gradient(135deg,var(--faint) 50%,transparent 50%);
+    background-position:calc(100% - 10px) calc(50% + 1px),calc(100% - 6px) calc(50% + 1px);
+    background-size:4px 4px,4px 4px;background-repeat:no-repeat}
+  select.cell:hover,select.cell:focus{
+    background-image:linear-gradient(45deg,transparent 50%,var(--ink) 50%),linear-gradient(135deg,var(--ink) 50%,transparent 50%)}
   .del{background:none;border:none;color:var(--faint);cursor:pointer;font-size:var(--v-icon);padding:4px 8px;border-radius:5px}
   .del:hover{color:var(--down);background:rgba(229,72,77,.1)}
   tfoot td{padding:10px;font-family:var(--mono);font-weight:600;border-top:2px solid var(--line)}
@@ -385,6 +438,7 @@
   .mini-form label{display:flex;flex-direction:column;gap:4px;font-size:var(--l-micro);letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
   .mini-form input{background:var(--panel-2);border:1px solid var(--line);color:var(--ink);padding:7px 9px;border-radius:6px;font-family:var(--mono);font-size:var(--t-mid);width:110px}
   .mini-form input:focus{outline:none;border-color:var(--amber)}
+  .mini-form input:focus-visible{outline:2px solid var(--amber);outline-offset:1px}
   .mini-form input[type=date]{width:145px}
   .read-row{display:flex;gap:22px;flex-wrap:wrap;margin-bottom:6px}
   .read{display:flex;flex-direction:column}
@@ -398,10 +452,10 @@
   .note b{color:var(--muted)}
 
   .imp{display:inline-block;font-family:var(--mono);font-size:var(--l-tag);letter-spacing:.06em;text-transform:uppercase;padding:2px 7px;border-radius:4px}
-  .imp.High{background:rgba(229,72,77,.15);color:#f08a8d}
-  .imp.Med{background:rgba(224,168,59,.15);color:var(--amber)}
-  .imp.Low{background:rgba(139,148,163,.12);color:var(--muted)}
-  .imp.Personal{background:rgba(154,140,240,.15);color:var(--violet)}
+  .imp.High{background:color-mix(in srgb,var(--down) 15%,transparent);color:var(--down)}
+  .imp.Med{background:color-mix(in srgb,var(--amber) 15%,transparent);color:var(--amber)}
+  .imp.Low{background:color-mix(in srgb,var(--muted) 12%,transparent);color:var(--muted)}
+  .imp.Personal{background:color-mix(in srgb,var(--violet) 15%,transparent);color:var(--violet)}
 
   .empty{color:var(--faint);font-size:var(--t-mid);text-align:center;padding:26px}
   .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(80px);background:var(--panel-2);border:1px solid var(--amber-dim);color:var(--ink);padding:11px 18px;border-radius:8px;font-size:13px;box-shadow:0 10px 30px rgba(0,0,0,.5);transition:transform .3s;z-index:60}
@@ -498,6 +552,21 @@
   /* the table scrolls inside the panel rather than squashing — at phone width a squashed table
      wraps dates across two lines and clips the expanded ledger's figures */
   .arch-wrap{overflow-x:auto}
+  /* sits behind the TradingView frame and is covered when the widget paints */
+  #tvBox{position:relative}
+  .tv-ph{position:absolute;inset:0;display:flex;flex-direction:column;justify-content:center;
+    padding:0 28px;text-align:center;color:var(--faint);font-size:var(--t-small);line-height:1.6}
+  .tv-ph span{display:block;margin-top:8px;color:var(--faint);opacity:.85}
+  #tvBox>iframe{position:relative;z-index:1}
+  /* The same treatment for the five editable tables. Only the archive table had it, and the
+     8-column budget table needs it most: at 360px there is about 324px of panel for eight
+     columns including two text inputs and a select, so without this the table pushed the
+     whole PAGE sideways. Scrolling the table instead keeps the page itself fixed.
+     min-width only bites below it; on a normal window these are inert. */
+  .tbl-wrap{overflow-x:auto}
+  #tab-budget .tbl-wrap>table{min-width:620px}
+  #tab-calendar .tbl-wrap>table{min-width:480px}
+  #tab-ledger .tbl-wrap>table,#tab-budget .tbl-wrap>table.goals-table{min-width:420px}
   .arch-wrap>table{min-width:680px}
   .arch-wrap td.tnum,.arch-wrap td.num{white-space:nowrap}
   .arch-row{cursor:pointer}
@@ -514,7 +583,11 @@
   .arch-detail table{font-size:var(--t-small)}
   .arch-detail td,.arch-detail th{padding:4px 6px}
   .arch-warn{color:var(--down);font-weight:600}
+  /* These are validation failures on an overlay whose text is otherwise all one colour, so
+     weight was the only signal that anything had gone wrong. The overlay paints --amber or
+     --down behind it, so the error reads as a dark chip rather than red-on-red. */
   .welcome .wc-err{min-height:1.3em;margin-top:12px;font-size:13px;font-weight:600}
+  .welcome .wc-err:not(:empty){background:rgba(0,0,0,.82);color:#fff;border-radius:6px;padding:7px 11px;display:inline-block}
   .welcome select option{color:#000}
 
   /* guided hints — highlight the field, explain it beside it, ✕ to leave */
@@ -822,20 +895,24 @@
   <section class="tab" id="tab-ledger">
     <div class="panel">
       <h3><span id="hLedgerAssets">Assets</span> <span class="tag">editable · click any cell</span></h3>
+      <div class="tbl-wrap">
       <table>
         <thead><tr><th style="width:34%" id="thAssetItem">Item</th><th style="width:22%" id="thAssetCat">Category</th><th class="num" style="width:20%" id="thAssetValue">Value</th><th id="thAssetNotes">Notes</th><th style="width:34px"></th></tr></thead>
         <tbody id="assetBody"></tbody>
         <tfoot><tr><td id="lblAssetTotal">Total assets</td><td></td><td class="num tnum" id="assetTotal">—</td><td></td><td></td></tr></tfoot>
       </table>
+      </div>
       <button class="add-row" data-add="asset" id="btnAddAsset">+ Add asset</button>
     </div>
     <div class="panel" style="margin-top:16px">
       <h3><span id="hLedgerLiab">Liabilities</span> <span class="tag">editable</span></h3>
+      <div class="tbl-wrap">
       <table>
         <thead><tr><th style="width:34%" id="thLiabItem">Item</th><th style="width:22%" id="thLiabCat">Category</th><th class="num" style="width:20%" id="thLiabBalance">Balance</th><th id="thLiabNotes">Notes</th><th style="width:34px"></th></tr></thead>
         <tbody id="liabBody"></tbody>
         <tfoot><tr><td id="lblLiabTotal">Total liabilities</td><td></td><td class="num tnum" id="liabTotal">—</td><td></td><td></td></tr></tfoot>
       </table>
+      </div>
       <button class="add-row" data-add="liab" id="btnAddLiability">+ Add liability</button>
     </div>
     <div class="net-strip">
@@ -860,6 +937,7 @@
 
     <div class="panel">
       <h3><span id="hBudgetCashInOut">Cash in / cash out</span> <span class="tag">editable · drag ⠿ to reorder</span></h3>
+      <div class="tbl-wrap">
       <table>
         <thead><tr>
           <th style="width:26px"></th>
@@ -889,12 +967,14 @@
           <td colspan="4"></td>
         </tr></tfoot>
       </table>
+      </div>
       <div class="note">Everything here is a <b>monthly</b> figure. Rows marked optional start at $0 and stay dimmed until you give them a value. <b>Type</b> decides whether a cost counts as discretionary — that's what drives the Future spend panel below. Note that if you list 401(k) contributions under Cash in, the net figure is gross inflow rather than take-home.</div>
     </div>
 
     <div class="panel" style="margin-top:16px">
       <h3><span id="hBudgetGoals">Goals</span> <span class="tag">funded by your ledger · monthly</span></h3>
       <div class="read-row" id="goalReads"></div>
+      <div class="tbl-wrap">
       <table>
         <thead><tr>
           <th style="width:22%" id="thGoalName">Goal</th>
@@ -907,6 +987,7 @@
         </tr></thead>
         <tbody id="goalBody"></tbody>
       </table>
+      </div>
       <button class="add-row" data-add="goal" id="btnAddGoal">+ Add goal</button>
       <div class="note">Progress is read straight from your ledger — pick the account category that funds each goal and it updates itself when you update the ledger. <b>Per month</b> is what you intend to put in; the readout above compares your total commitment against your net cash flow.</div>
     </div>
@@ -973,10 +1054,12 @@
     <div class="panel reorderable" data-panel="personal">
       <button class="reorder-handle" draggable="true" title="Drag to reorder" aria-label="Move this panel">↕</button>
       <h3><span id="hCalPersonal">Personal economic calendar</span> <span class="tag">editable · sorts by date</span></h3>
+      <div class="tbl-wrap">
       <table>
         <thead><tr><th style="width:130px" id="thCalDate">Date</th><th style="width:30%" id="thCalEvent">Event</th><th style="width:110px" id="thCalImportance">Importance</th><th id="thCalNotes">Notes</th><th style="width:34px"></th></tr></thead>
         <tbody id="calBody"></tbody>
       </table>
+      </div>
       <button class="add-row" data-add="cal" id="btnAddEvent">+ Add event</button>
       <div class="note">Seeded with recurring US releases plus two example personal dates. <b>Verify the release dates</b> against an official calendar — they shift, and a couple here are placeholders. Past events auto-grey.</div>
     </div>
@@ -1717,6 +1800,7 @@ function showSaveBlocked(){
   t.innerHTML="<b>Saving is blocked in this browser</b> — storage is full, or this is a private window. "+
     "Edits you make now will be lost on reload. <b>Export</b> to keep them.";
   document.getElementById("bannerGo").hidden=true;
+  b.classList.add("bad");   // unrecoverable data loss, not "you haven't updated in 7 days"
   b.hidden=false;
 }
 
@@ -2105,36 +2189,45 @@ function applyChromeI18n(){
 // --faint / --muted are tuned so .note, .empty and notes cells clear WCAG 4.5:1 on both --bg and
 // --panel in every theme (Latte was 1.97:1). Re-run the contrast check before changing them.
 const THEMES={
-  terminal:{name:"Terminal",sub:"default · amber on ink",vars:{
+  terminal:{name:"Terminal",sub:"default · amber on ink",scheme:"dark",vars:{
     bg:"#0d1015","panel":"#141922","panel-2":"#1a212c",line:"#232c39",ink:"#e8e3d6",
     muted:"#8b94a3",faint:"#778293",amber:"#e0a83b","amber-dim":"#8a6a24",
     up:"#4fb477",down:"#e5484d",blue:"#4a90d9",violet:"#9a8cf0",peach:"#d97757",
     cyan:"#00FFFF","tape-bg":"#0a0d12"}},
-  mocha:{name:"Catppuccin Mocha",sub:"dark · mauve accent",vars:{
+  mocha:{name:"Catppuccin Mocha",sub:"dark · mauve accent",scheme:"dark",vars:{
     bg:"#181825","panel":"#1e1e2e","panel-2":"#313244",line:"#45475a",ink:"#cdd6f4",
     muted:"#a6adc8",faint:"#83869b",amber:"#cba6f7","amber-dim":"#7f849c",
     up:"#a6e3a1",down:"#f38ba8",blue:"#89b4fa",violet:"#b4befe",peach:"#fab387",
     cyan:"#89dceb","tape-bg":"#11111b"}},
-  macchiato:{name:"Catppuccin Macchiato",sub:"dark · mauve accent",vars:{
+  macchiato:{name:"Catppuccin Macchiato",sub:"dark · mauve accent",scheme:"dark",vars:{
     bg:"#1e2030","panel":"#24273a","panel-2":"#363a4f",line:"#494d64",ink:"#cad3f5",
     muted:"#a5adcb",faint:"#8a8ea4",amber:"#c6a0f6","amber-dim":"#8087a2",
     up:"#a6da95",down:"#ed8796",blue:"#8aadf4",violet:"#b7bdf8",peach:"#f5a97f",
     cyan:"#91d7e3","tape-bg":"#181926"}},
-  frappe:{name:"Catppuccin Frappé",sub:"dark · mauve accent",vars:{
+  frappe:{name:"Catppuccin Frappé",sub:"dark · mauve accent",scheme:"dark",vars:{
     bg:"#292c3c","panel":"#303446","panel-2":"#414559",line:"#51576d",ink:"#c6d0f5",
     muted:"#a5adce",faint:"#979cb0",amber:"#ca9ee6","amber-dim":"#838ba7",
     up:"#a6d189",down:"#e78284",blue:"#8caaee",violet:"#babbf1",peach:"#ef9f76",
     cyan:"#99d1db","tape-bg":"#232634"}},
-  latte:{name:"Catppuccin Latte",sub:"light · mauve accent",vars:{
+  latte:{name:"Catppuccin Latte",sub:"light · mauve accent",scheme:"light",vars:{
     bg:"#dce0e8","panel":"#eff1f5","panel-2":"#e6e9ef",line:"#ccd0da",ink:"#4c4f69",
     muted:"#595c70",faint:"#5e6376",amber:"#8839ef","amber-dim":"#8c8fa1",
     up:"#40a02b",down:"#d20f39",blue:"#1e66f5",violet:"#7287fd",peach:"#fe640b",
     cyan:"#179299","tape-bg":"#e6e9ef"}}
 };
 function applyTheme(id){
-  const t=THEMES[id]||THEMES.terminal;
+  const t=own(THEMES,id)?THEMES[id]:THEMES.terminal;
   const root=document.documentElement;
   Object.entries(t.vars).forEach(([k,v])=>root.style.setProperty("--"+k,v));
+  // color-scheme is what makes the BROWSER'S own chrome match the theme: scrollbars, the text
+  // caret, and the native date and number widgets. Without it the four dark themes rendered
+  // light scrollbars, a black caret in dark inputs, and a light date picker.
+  //
+  // It cannot be a static rule in :root. Themes are applied by writing custom properties onto
+  // documentElement — there is no data-theme attribute and no per-theme class to hang a selector
+  // on — so a fixed `color-scheme:dark` would be wrong for Latte. It comes off the theme table
+  // rather than a test for id==="latte", so a sixth light theme can't silently regress it.
+  root.style.colorScheme=t.scheme||"dark";
   state.theme=id;
 }
 function css(name){return getComputedStyle(document.documentElement).getPropertyValue(name).trim();}
@@ -2809,7 +2902,17 @@ async function refreshFx(){
 }
 function maybeRefreshFx(){
   if(state.currency==="USD"||(state.fx.lastFetch===today()&&fxRateKnown()))return;
-  refreshFx().then(ok=>{if(ok){renderTape();renderTab(currentTab);renderCurList();setSectionCurrent();}});
+  refreshFx().then(ok=>{
+    if(ok){renderTape();renderTab(currentTab);renderCurList();setSectionCurrent();return;}
+    // The failure used to be dropped on the floor here, while the SAME failure toasts loudly
+    // when the user picks a currency from the menu. Silence is worse on this path, not better:
+    // it runs on load, so figures sit under a foreign symbol at a stale rate with nothing said.
+    // Only speak up if we have no usable rate at all — a cached one is still a rate.
+    if(!fxRateKnown()){
+      renderTape();renderCurList();setSectionCurrent();
+      toastErr("Couldn't fetch today's exchange rate — figures are shown in USD.");
+    }
+  });
 }
 
 /* ---------- calendar drag-to-reorder ---------- */
@@ -2864,6 +2967,18 @@ function ensureTradingViewWidget(){
     isTransparent:true,width:"100%",height:"100%",locale:"en",
     importanceFilter:"-1,0,1",countryFilter:"us"
   });
+  // A placeholder under the frame. The box is 500px tall by default and the frame paints only
+  // once TradingView's async script lands — so a slow network showed a 500px void, and a blocked
+  // one showed it forever with no explanation. The frame is opaque and cross-origin, so we cannot
+  // detect its success; instead the note sits BEHIND the frame and is simply covered when the
+  // widget paints over it. No timer, nothing to get wrong.
+  const ph=document.createElement("div");
+  ph.className="tv-ph";
+  ph.innerHTML="Loading the live calendar from TradingView\u2026<br><span>This is the only panel that "+
+    "contacts a third party, and it only does so when you open this tab. If it stays blank, you are "+
+    "offline or something is blocking it \u2014 the editable calendar beside it still works.";
+  box.appendChild(ph);
+
   const frame=document.createElement("iframe");
   frame.id="tvFrame";
   frame.title="Live economic calendar";
@@ -2890,6 +3005,17 @@ function ensureTradingViewWidget(){
   ].join(""));
   box.appendChild(frame);
 }
+/* Expected console noise on this tab, recorded so it is not re-investigated every six months.
+   TradingView's widget loads a NESTED frame of its own from www.tradingview-widget.com (an
+   analytics/"sheriff" endpoint). Our frame-src allows s.tradingview.com, which is the widget
+   itself, and does not allow that one — so the browser logs a red CSP violation on every visit
+   to this tab while the calendar itself loads and renders real data perfectly.
+
+   That is the policy working, not a defect: verified in Chrome that the events frame loads and
+   shows the current day's releases with the nested frame refused. Do NOT widen frame-src to
+   silence it. Firefox and WebKit report the same thing in their own words, and on file:// you
+   will also see opaque-origin, null-origin CORS, LockManager and cookie-access errors from
+   inside the sandbox — all of which are the sandbox doing its job. */
 // The live calendar sizes itself from saved state only — deliberately never from the
 // Personal panel, so editing or deleting events there can't move it.
 // Sole writer of the live-calendar height. Sets --live-cal-h rather than style.height,
@@ -3115,7 +3241,9 @@ function renderTape(){
     ["10Y",y.y10!=null?y.y10.toFixed(2)+"%":"—","amb"],
     ["20Y",y.y20!=null?y.y20.toFixed(2)+"%":"—","amb"],
     ["30Y",y.y30!=null?y.y30.toFixed(2)+"%":"—","amb"],
-    ["CPI",inf.cpi!=null?inf.cpi.toFixed(2)+"%":"—","down"],
+    // neutral when empty, like every other nullable reading here — a red em-dash reads as a
+    // fall in inflation rather than as "no data", and both series ship empty now
+    ["CPI",inf.cpi!=null?inf.cpi.toFixed(2)+"%":"—",inf.cpi!=null?"down":"amb"],
     ["REAL 10Y",real!=null?real+"%":"—",real==null?"amb":(+real>=0?"up":"down")]
   ];
   if(!fxRateKnown())items.unshift(["FX","rate unavailable — figures shown in USD","down"]);
@@ -3907,6 +4035,7 @@ function maybeBanner(){
       : noSnaps
       ? `Nothing snapshotted yet. <b>Open the ledger</b>, confirm today's values, then head to <b>Overview</b> and hit Refresh to log your first data point.`
       : `Last updated <b>${Math.round(days)} days</b> ago. <b>Open the ledger</b> to update values, then hit Refresh on the <b>Overview</b> tab to log a snapshot.`;
+    b.classList.remove("bad");   // shared element — showSaveBlocked() may have marked it
     b.hidden=false;
   }else b.hidden=true;
 }
@@ -3914,7 +4043,7 @@ function maybeBanner(){
 /* ---------- footer ---------- */
 function renderFoot(){
   document.getElementById("foot").innerHTML=
-    `Data lives only in this browser via localStorage${canPersist?"":" <b style='color:#e5484d'>(blocked here — export to keep your data)</b>"}. `+
+    `Data lives only in this browser via localStorage${canPersist?"":" <b style='color:var(--down)'>(blocked here — export to keep your data)</b>"}. `+
     `No account, no server — your financial data never leaves your machine. Back up with <code>Export</code>. `+
     `To wire in live prices/rates later, your pipeline can write the same JSON shape you get from Export and you re-Import it. `+
     `Not financial advice.`;
