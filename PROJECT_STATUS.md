@@ -9,7 +9,7 @@
 ## Snapshot
 
 - **What it is:** a single-file, offline-first personal net-worth & macro dashboard. Vanilla HTML/CSS/JS, no bundler, no backend. Persists to `localStorage`. There is one build step, and it is not a compiler: `build.py` projects the source into the other two builds (see **Three builds** below). Every output is still a standalone single file that runs by double-clicking it.
-- **Genuinely offline on load.** Chart.js v4.4.1 is **inlined** into the file (~205 KB minified, 13 lines, MIT banner preserved, `sourceMappingURL` stripped) — no CDN tag, and the page's own two script blocks are both inline. Opening the page fires **zero** network requests **by default** (auto-refresh ships `off` — see Macro Signals). Only three things ever reach out, all user-triggered: the TradingView widget on first Economic Calendar view, the Treasury/BLS fetches on Refresh from Macro Signals, and the FX-rate fetch when a non-USD currency is selected. The single remaining third-party `script src` is TradingView's, and it lives inside the sandboxed frame's `srcdoc`, never in this document — see **Security posture**. Don't "optimize" Chart.js back to a CDN — inlining is deliberate (it also removes an unpinned-CDN supply-chain path, since the old tag had no SRI hash).
+- **Genuinely offline on load.** Chart.js v4.4.1 is **inlined** into the file (~205 KB minified, 13 lines, MIT banner preserved and `@kurkle/color`'s alongside it, `sourceMappingURL` stripped). **Never dump those lines** — they will swamp a context window. Find them by LENGTH rather than by line number, which moves with every edit: `awk 'length($0)>2000 {print NR}'` prints exactly the two that matter, and `awk 'length($0)<2000'` filters them out of any grep — no CDN tag, and the page's own two script blocks are both inline. Opening the page fires **zero** network requests **by default** (auto-refresh ships `off` — see Macro Signals). Only three things ever reach out, all user-triggered: the TradingView widget on first Economic Calendar view, the Treasury/BLS fetches on Refresh from Macro Signals, and the FX-rate fetch when a non-USD currency is selected. The single remaining third-party `script src` is TradingView's, and it lives inside the sandboxed frame's `srcdoc`, never in this document — see **Security posture**. Don't "optimize" Chart.js back to a CDN — inlining is deliberate (it also removes an unpinned-CDN supply-chain path, since the old tag had no SRI hash).
 - **File:** `SomiFinanceDemo.html` (~5627 lines / ~528 KB, one file — markup, styles, and script all inline; ~200 KB of that is the inlined Chart.js, so hand-written code is ~255 KB). The quarterly archive added ~550 lines.
 - **Three builds, one source.** `SomiFinanceDemo.html` is the **only file anyone edits**. `build.py` projects it into the other two. Never hand-edit a generated file — it carries a DO-NOT-EDIT banner and the next build silently overwrites it.
 
@@ -388,6 +388,21 @@ grouped by what they protect:
   can be replayed. `APP_VERSION` is surfaced in About and the footer, and the copyright year is
   computed. Repo gained `LICENSE` (MIT), `SECURITY.md` and issue templates.
 - **QA:** four Playwright suites over `file://` — full-app 102, archive 70, settings menu 61,
+- **`build.py` gained a third guard.** `check_budget_parity()` compares the row lists in
+  `exampleBudget()` (the HTML, filled amounts) and `BUDGET_TEMPLATE` (build.py, zeroed) and fails
+  the build if they differ by name, category or kind. There are deliberately two copies — the demo
+  seeds one and the other builds get the other — and nothing else would notice a row added to just
+  one of them. A comment used to claim the rows lived in one place; they do not.
+- **The one bug this pass introduced, and how it was caught.** The ⚙ example-data offer was gated
+  on `isFreshInstall()` at RENDER time only, and `loadExampleData()` never re-checked. Add your
+  first account without reloading, open ⚙ for the first time, and the offer was still live —
+  clicking it replaced that account and saved. The feature deliberately has no confirm, on the
+  argument that the gate makes one unnecessary, so a render-time-only gate took the whole safety
+  argument with it. **When a gate is the reason there is no confirm, it has to live where the
+  confirm would have.** Fixed by re-checking inside the action; mutation-tested (7 checks fail
+  with the guard removed). A sweep of every other render-time gate found no second instance —
+  archive append, reset commit, `deleteRow()`, `undoDelete()` and import all re-check at the
+  action.
   keyboard/undo 60 — plus per-theme contrast and narrow-width overflow checks. Lint clean: no
   unresolved ids, no dead functions, no `console.log`, i18n dicts in sync at 71 keys each. The
   archive's rejection paths were re-verified independently by **mutation testing** (deleting the

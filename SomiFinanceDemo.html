@@ -27,7 +27,7 @@
 -->
 <meta http-equiv="Content-Security-Policy" content="
   default-src 'none';
-  script-src 'sha256-LEfI6wtiATeJWC0ehfYamH0fHWvD5leT9b99SJsRVXU=' 'sha256-fV1kYSOFzffQe5jbNpcdCqFHnIFaNm1PD0C8nMCJnx4=' https://s3.tradingview.com;
+  script-src 'sha256-LEfI6wtiATeJWC0ehfYamH0fHWvD5leT9b99SJsRVXU=' 'sha256-4nau8UQHiJCtENtHJ2xqQQKoHpHaz6TAyhIcmLf8xas=' https://s3.tradingview.com;
   style-src 'unsafe-inline';
   img-src data: https:;
   connect-src https://home.treasury.gov https://api.bls.gov https://open.er-api.com http://127.0.0.1:* http://localhost:*;
@@ -1648,7 +1648,10 @@ function exampleBudget(){
 
 /* @variant:begin seedBudget */
 // Each build's first-run budget. The demo opens on the filled example; the others ship the same
-// ROW LIST with every amount at 0 (build.py swaps this block), so the rows exist in one place.
+// ROW LIST with every amount at 0, which build.py swaps in from its own BUDGET_TEMPLATE.
+// So the rows exist in TWO places, not one — they are not generated from each other. Adding a
+// row here and not there (or the reverse) would make the seeded budget and the example data
+// disagree, silently and per build. check_budget_parity() in build.py fails the build on that.
 function seedBudget(){return exampleBudget();}
 /* @variant:end seedBudget */
 

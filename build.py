@@ -355,6 +355,47 @@ BUDGET_TEMPLATE = """function seedBudget(){
 RELEASES = RawJS("nextReleases()")
 
 
+def _budget_rows(js):
+    """(name, cat) for each inc(...) and (name, cat, kind) for each exp(...).
+
+    Both row lists put name, cat and kind first and differ only in the numeric arguments that
+    follow, so the same two patterns read either one.
+    """
+    inc = re.findall(r'inc\(\s*"((?:[^"\\]|\\.)*)"\s*,\s*"((?:[^"\\]|\\.)*)"', js)
+    exp = re.findall(r'exp\(\s*"((?:[^"\\]|\\.)*)"\s*,\s*"((?:[^"\\]|\\.)*)"\s*,\s*"((?:[^"\\]|\\.)*)"', js)
+    return inc, exp
+
+
+def check_budget_parity(src):
+    """Abort if the two copies of the budget row list have drifted apart.
+
+    There are two on purpose. exampleBudget() in the HTML carries the filled amounts, and is what
+    the demo build seeds and what "Load example data" loads. BUDGET_TEMPLATE here is the same rows
+    with every amount at 0, and build.py swaps it in for the end-user and personal builds.
+
+    They are not generated from one another, so nothing else notices if a row is added to one and
+    not the other — the seeded budget and the example budget would simply disagree, silently and
+    per build. This makes that a build failure instead.
+    """
+    m = re.search(r"function exampleBudget\(\)\{.*?\n\}", src, re.S)
+    if not m:
+        die("exampleBudget() not found — the budget parity check can no longer run.")
+    ex_inc, ex_exp = _budget_rows(m.group(0))
+    tp_inc, tp_exp = _budget_rows(BUDGET_TEMPLATE)
+    if not ex_inc or not ex_exp:
+        die("budget parity check read no rows from exampleBudget() — the pattern has gone stale.")
+    for label, a, b_ in (("income", ex_inc, tp_inc), ("expense", ex_exp, tp_exp)):
+        if a != b_:
+            only_ex = [r for r in a if r not in b_]
+            only_tp = [r for r in b_ if r not in a]
+            die("budget row lists have drifted (%s).\n"
+                "  exampleBudget() in %s has %d rows, BUDGET_TEMPLATE in build.py has %d.\n"
+                "  only in exampleBudget(): %s\n"
+                "  only in BUDGET_TEMPLATE: %s\n"
+                "  Add the row to BOTH, or the seeded budget and the example data disagree."
+                % (label, SOURCE, len(a), len(b_), only_ex or "-", only_tp or "-"))
+
+
 def demo_strings(title, watermark, key, calendar_note):
     """The demo's own wording on the left, this variant's on the right."""
     return [
@@ -471,6 +512,7 @@ def main():
     if found:
         die("%s contains real data (%s) — it must never enter a tracked build"
             % (SOURCE, ", ".join(found)))
+    check_budget_parity(src)
 
     variants = [USER]
     personal = personal_variant()
