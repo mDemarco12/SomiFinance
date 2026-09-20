@@ -387,7 +387,14 @@ grouped by what they protect:
   re-format left the box *looking* empty. Ticker tape has a pause control (WCAG 2.2.2). The tour
   can be replayed. `APP_VERSION` is surfaced in About and the footer, and the copyright year is
   computed. Repo gained `LICENSE` (MIT), `SECURITY.md` and issue templates.
-- **QA:** four Playwright suites over `file://` — full-app 102, archive 70, settings menu 61,
+- **QA:** eight Playwright suites over `file://` — full-app 102, archive 70, settings menu 61,
+  keyboard/undo 60, first-run 26, example data 19, stale gate 16, per-theme contrast 10 — plus a
+  personal-build check (13) and a narrow-width overflow check that asserts zero horizontal page
+  overflow at 360 and 390px. Lint clean: no unresolved ids, no dead functions, no `console.log`,
+  i18n dicts in sync at 71 keys each. The archive's rejection paths were re-verified independently
+  by **mutation testing** (deleting the KDF bounds check and confirming the suite fails), because
+  a toast-helper change had made three archive tests pass again and that needed to be proven not
+  to be masking.
 - **`build.py` gained a third guard.** `check_budget_parity()` compares the row lists in
   `exampleBudget()` (the HTML, filled amounts) and `BUDGET_TEMPLATE` (build.py, zeroed) and fails
   the build if they differ by name, category or kind. There are deliberately two copies — the demo
@@ -403,11 +410,6 @@ grouped by what they protect:
   with the guard removed). A sweep of every other render-time gate found no second instance —
   archive append, reset commit, `deleteRow()`, `undoDelete()` and import all re-check at the
   action.
-  keyboard/undo 60 — plus per-theme contrast and narrow-width overflow checks. Lint clean: no
-  unresolved ids, no dead functions, no `console.log`, i18n dicts in sync at 71 keys each. The
-  archive's rejection paths were re-verified independently by **mutation testing** (deleting the
-  KDF bounds check and confirming the suite fails), because a toast-helper change had made three
-  archive tests pass again and that needed to be proven not to be masking.
 
 **Reset all data**
 **Reset all data**
