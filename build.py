@@ -286,6 +286,7 @@ function seed(){
     liveCalHeight:500,   // px height of the TradingView box — user-set via the corner grip
     setMenuScale:1,      // ⚙ menu size, text and spacing together — user-set via its corner grip
     tapePaused:false,    // ticker tape stopped by the user (WCAG 2.2.2 pause control)
+    exampleData:false,   // true while the ⚙ example dataset is loaded — drives the banner
     autoRefresh:"off",   // off | stale | always — default off keeps page load request-free
     lastFetch:"",        // YYYY-MM-DD of the last fully successful macro fetch
     archive:{lastQuarter:"",lastAt:"",salt:"",head:"",count:0},   // nudge + truncation anchor only
@@ -359,7 +360,7 @@ def demo_strings(title, watermark, key, calendar_note):
     return [
         ("<title>SomiFinance — Demo</title>", "<title>%s</title>" % title),
         (
-            '<div class="watermark">SomiFinance — Demo ©<span id="wmYear">2026</span> mDemarco12</div>',
+            '<div class="watermark">SomiFinance — Demo ©<span id="wmYear">2026</span> mDemarco12 · <span id="wmVer"></span></div>',
             '<div class="watermark">%s</div>' % watermark,
         ),
         (
@@ -371,7 +372,7 @@ def demo_strings(title, watermark, key, calendar_note):
             'localStorage["%s"] — every holding' % key,
         ),
         (
-            "Seeded with recurring US releases plus two example personal dates.",
+            "Starts with a few example rows so the table isn't empty — edit or delete them freely.",
             calendar_note,
         ),
     ]
@@ -398,9 +399,9 @@ USER = {
     },
     "strings": demo_strings(
         title="SomiFinance",
-        watermark="SomiFinance ©<span id=\"wmYear\">2026</span> mDemarco12",
+        watermark="SomiFinance ©<span id=\"wmYear\">2026</span> mDemarco12 · <span id=\"wmVer\"></span>",
         key="somifinance.v1",
-        calendar_note="Seeded with recurring US releases. Add your own dates alongside them.",
+        calendar_note="Starts with a few example rows so the table isn't empty — edit or delete them freely.",
     ),
 }
 
@@ -432,11 +433,11 @@ def personal_variant():
         },
         "strings": demo_strings(
             title="SomiFinance — Personal",
-            watermark="SomiFinance ©<span id=\"wmYear\">2026</span> mDemarco12",
+            watermark="SomiFinance ©<span id=\"wmYear\">2026</span> mDemarco12 · <span id=\"wmVer\"></span>",
             key="somifinance.personal.v1",
             calendar_note=d.get(
                 "calendarNote",
-                "Seeded with recurring US releases plus your own dates.",
+                "A few example rows to start with, alongside your own dates.",
             ),
         ),
         "tracked": False,

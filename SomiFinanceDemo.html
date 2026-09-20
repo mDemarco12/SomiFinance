@@ -27,7 +27,7 @@
 -->
 <meta http-equiv="Content-Security-Policy" content="
   default-src 'none';
-  script-src 'sha256-LEfI6wtiATeJWC0ehfYamH0fHWvD5leT9b99SJsRVXU=' 'sha256-Ch7X5euF5keWPXNGcxi1/IyAAn0o++CLJEKtxL2n4bw=' https://s3.tradingview.com;
+  script-src 'sha256-LEfI6wtiATeJWC0ehfYamH0fHWvD5leT9b99SJsRVXU=' 'sha256-/rcSKyU0kzLZICTZyJsBEASOIwVdWr0GAeqaVA2IHGY=' https://s3.tradingview.com;
   style-src 'unsafe-inline';
   img-src data: https:;
   connect-src https://home.treasury.gov https://api.bls.gov https://open.er-api.com http://127.0.0.1:* http://localhost:*;
@@ -277,6 +277,9 @@
   .banner{display:flex;align-items:center;gap:14px;background:linear-gradient(90deg,color-mix(in srgb,var(--amber) 12%,transparent),color-mix(in srgb,var(--amber) 3%,transparent));border:1px solid var(--amber-dim);border-radius:10px;padding:12px 16px;margin-bottom:20px}
   /* A failure must not wear the same amber as "you haven't updated in 7 days". #updateBanner
      is reused for both, and showSaveBlocked() puts an unrecoverable data-loss warning in it. */
+  /* the example-data notice is informational, not a warning; violet keeps it clearly
+     distinct from both the amber nudge and the red failure */
+  .banner.example{background:linear-gradient(90deg,color-mix(in srgb,var(--violet) 14%,transparent),color-mix(in srgb,var(--violet) 3%,transparent));border-color:var(--violet)}
   .banner.bad{background:linear-gradient(90deg,color-mix(in srgb,var(--down) 16%,transparent),color-mix(in srgb,var(--down) 4%,transparent));border-color:var(--down)}
   .banner .b-ico{font-size:18px}
   .banner .b-txt{flex:1;font-size:var(--t-body);color:var(--ink)}
@@ -534,6 +537,12 @@
   .welcome .wc-alt:hover{background:#000}
   /* destructive action, deliberately last and set apart from the five pickers above it */
   .set-danger{width:100%;margin-top:calc(6px * var(--set-scale,1));padding-top:calc(10px * var(--set-scale,1));border-top:1px solid var(--line)}
+  .set-example{border-top:1px solid var(--line);margin-top:calc(8px * var(--set-scale,1));padding-top:calc(10px * var(--set-scale,1))}
+  .set-example button{width:100%;background:none;border:1px solid var(--line);color:var(--violet);
+    padding:calc(9px * var(--set-scale,1)) calc(10px * var(--set-scale,1));border-radius:8px;cursor:pointer;
+    font-size:calc(13px * var(--set-scale,1));text-align:left}
+  .set-example button:hover{border-color:var(--violet)}
+  .set-example button:focus-visible{outline:2px solid var(--violet);outline-offset:2px}
   .set-danger button{width:100%;background:none;border:1px solid var(--line);color:var(--down);
     padding:calc(9px * var(--set-scale,1)) calc(10px * var(--set-scale,1));border-radius:8px;cursor:pointer;font-family:var(--mono);
     font-size:calc(var(--l-micro) * var(--set-scale,1));letter-spacing:.1em;text-transform:uppercase;text-align:left}
@@ -808,6 +817,17 @@
         </button>
         <div class="set-body" id="archItems" hidden></div>
       </div>
+      <!-- Like the reset below, not a .set-sec: a one-shot action is not a picker. Hidden
+           unless the install is genuinely empty — see loadExampleData(). -->
+      <div class="set-example" id="tourWrap">
+        <button type="button" id="tourBtn">◷ Replay the intro hints</button>
+        <div class="set-note">The short guided tour from your first run.</div>
+      </div>
+      <div class="set-example" id="exampleWrap" hidden>
+        <button type="button" id="exampleBtn">◆ Load example data</button>
+        <div class="set-note">Fills the app with a made-up portfolio so you can see how it works.
+          Only offered while your install is still empty.</div>
+      </div>
       <!-- Not a .set-sec: openSetSection() treats every .set-head as an accordion panel, and a
            one-shot destructive action is not a picker. Plain button, set apart by a rule. -->
       <div class="set-danger">
@@ -834,9 +854,18 @@
 </div>
 
 <main>
+  <!-- Example data is on. Not dismissible on purpose: the harm this prevents is exporting a
+       demo portfolio believing it is your own, which a banner you can close does not prevent. -->
+  <div class="banner example" id="exampleBanner" hidden>
+    <span class="b-ico">◆</span>
+    <span class="b-txt"><b>You're looking at example data.</b> These figures are made up, so you can see
+      how SomiFinance works with a portfolio in it. Clear it from <b>⚙ → Reset all data</b> when you're
+      ready to enter your own.</span>
+    <button class="act" id="exampleClear">Clear example data</button>
+  </div>
   <div class="banner" id="updateBanner" hidden>
     <span class="b-ico">◔</span>
-    <span class="b-txt" id="bannerTxt">Your figures were last touched a while ago. <b>Open the ledger</b> to mark today's values, then hit Refresh to log a snapshot.</span>
+    <span class="b-txt" id="bannerTxt">Your figures were last touched a while ago. Open <b>Assets &amp; Liabilities</b> to mark today's values, then press Refresh on Overview to log a snapshot.</span>
     <button class="act primary" id="bannerGo">Update values</button>
     <button class="act" id="bannerDismiss">Later</button>
   </div>
@@ -919,7 +948,7 @@
       <span class="n-l" id="lblLedgerNetWorth">Net worth</span>
       <span class="n-v tnum" id="ledgerNet">—</span>
     </div>
-    <div class="note">Edits save automatically to this browser. Hit <b>Refresh</b> (top right) to log a dated snapshot so the Overview chart grows a new point. Export regularly — this is the master copy until you build a pipeline.</div>
+    <div class="note">Edits save automatically to this browser. Press <b>Refresh</b> on the Overview tab to log a dated snapshot, and the net-worth chart grows a new point. This browser holds the only copy of your figures, so <b>Export</b> a backup regularly.</div>
   </section>
 
   <!-- BUDGET -->
@@ -1025,7 +1054,7 @@
         <label>30yr %<input type="number" step="0.01" id="y30" placeholder="5.23"></label>
         <button class="act primary" id="yAdd">Add reading</button>
       </div>
-      <div class="note"><b>Two different things, both here on purpose.</b> The long-bond <i>nominal</i> yield above is what you watch as the market's price of money. Textbook "real yield" is that number minus inflation — plotted in the next panel — and the market's own real-rate estimate is the TIPS yield (enter it as a note if you track it). Keeping both lets you compare your read against the standard one without trusting anyone's press release.</div>
+      <div class="note"><b>Two different things, both here on purpose.</b> The long-bond <i>nominal</i> yield above is what you watch as the market's price of money. Textbook "real yield" is that number minus inflation — plotted in the next panel — and the market's own estimate is the yield on inflation-protected Treasuries, if that is something you follow. Keeping both lets you check your own read against the standard one.</div>
     </div>
     <div class="grid cols-2">
       <div class="panel">
@@ -1061,7 +1090,7 @@
       </table>
       </div>
       <button class="add-row" data-add="cal" id="btnAddEvent">+ Add event</button>
-      <div class="note">Seeded with recurring US releases plus two example personal dates. <b>Verify the release dates</b> against an official calendar — they shift, and a couple here are placeholders. Past events auto-grey.</div>
+      <div class="note">Starts with a few example rows so the table isn't empty — edit or delete them freely. <b>Check any date against an official calendar</b> before relying on it: release dates move, and these are only examples. Past events turn grey automatically.</div>
     </div>
     <div class="panel reorderable resizable-v" data-panel="live">
       <button class="reorder-handle" draggable="true" title="Drag to reorder" aria-label="Move this panel">↕</button>
@@ -1132,8 +1161,32 @@
       </div>
     </div>
 
+    <div class="panel" style="margin-bottom:16px">
+      <h3>Getting started <span class="tag">the short version</span></h3>
+      <div class="note" style="margin-top:0">
+        <b>1. Put your accounts in.</b> Open <b>Assets &amp; Liabilities</b> and list what you own and what
+        you owe. Click any cell to edit it. Give each row a category — that is what drives the
+        allocation breakdown on Overview.
+        <br><br>
+        <b>2. Press Refresh on Overview.</b> That logs a dated snapshot. Do it whenever you update your
+        figures, and the net-worth chart builds itself over time. Refresh does something different on
+        each tab: it snapshots on Overview, fetches Treasury and inflation data on Macro Signals, and
+        simply redraws elsewhere.
+        <br><br>
+        <b>3. Export a backup.</b> Your figures live in this browser and nowhere else. There is no
+        account and no server, so nobody can recover them for you. <b>⭳ Export</b> writes a JSON file;
+        <b>⭱ Import</b> reads it back, on this machine or another one.
+        <br><br>
+        <b>Worth knowing about:</b> the <b>⚙</b> menu holds five themes, three languages, six
+        currencies, your display name, the optional assistant, and the quarterly archive. The
+        <b>✦</b> button at the bottom right opens the assistant. Press <b>1</b>–<b>6</b> to jump
+        between tabs and <b>Esc</b> to close a menu. Deleted a row by mistake? Press
+        <b>Ctrl</b>/<b>⌘</b>+<b>Z</b>, or use the Undo button in the message that appears.
+      </div>
+    </div>
+
     <div class="panel">
-      <h3>About SomiFinance</h3>
+      <h3>About SomiFinance <span class="tag" id="aboutVer"></span></h3>
       <div class="note" style="margin-top:0">
         A single-file personal finance dashboard — net worth, budgeting, macro signals and an economic calendar in one page.
         There's no account, no server and no build step: everything runs in the browser and your figures are saved only to this
@@ -1180,7 +1233,7 @@
 </main>
 
 <div class="foot" id="foot"></div>
-<div class="watermark">SomiFinance — Demo ©<span id="wmYear">2026</span> mDemarco12</div>
+<div class="watermark">SomiFinance — Demo ©<span id="wmYear">2026</span> mDemarco12 · <span id="wmVer"></span></div>
 
 <!-- ✦ assistant — local Ollama chat, read-only. No aria-modal / focus trap: the panel is
      non-modal and the page stays usable behind it. aria-live is on the LOG, not per message,
@@ -1280,6 +1333,11 @@ const tickMoney=v=>curInfo().symbol+((+v)*fxRate()).toLocaleString(undefined,{ma
 const tickMoneyK=v=>curInfo().symbol+((+v)*fxRate()/1000).toFixed(0)+"k";
 // LOCAL calendar date. toISOString() is UTC, which stamped tomorrow's date on every snapshot,
 // calendar row and export filename for evening users west of Greenwich.
+// The app's own version. It ships as a downloaded file, so without this neither the user nor
+// anyone helping them can tell which build they are holding. Shown in the About tab and the
+// footer. Deliberately NOT written into state: it describes the code, not the user's data, so
+// persisting it would need a sanitizeState() line and would go stale against the file it sits in.
+const APP_VERSION="1.0.0";
 const today=()=>{const d=new Date();return new Date(d.getTime()-d.getTimezoneOffset()*6e4).toISOString().slice(0,10);};
 // today() shifted by n days, same local-civil-date handling. Used by the seeded calendar so its
 // rows are generated when the file is first opened rather than written as literals at build time.
@@ -1396,7 +1454,15 @@ function nextReleases(){
     {id:uid(),date:dayOffset(28),event:"FOMC rate decision",imp:"High",notes:"Example row — set the real date from federalreserve.gov"}
   ];
 }
-/* @variant:begin seed */
+/* ---------- example dataset ----------
+   Fake figures used two ways: as the demo build's seed, and as the "Load example data"
+   affordance in the end-user build. It lives OUTSIDE the @variant markers for the second
+   reason — build.py rewrites seed() wholesale, so anything inside them exists only in the
+   demo and the end-user build would have nothing to load.
+
+   It takes no variant input and never will. Parameterising it is the one way real holdings
+   could reach a tracked build; build.py's leak guard would abort, but the rule is simpler
+   than the guard: literal fake data only. Placeholder fund names, never real tickers. */
 // Dates run backwards from today() rather than being written as literals, so the demo's
 // net-worth curve is never stale no matter when someone opens it.
 function monthsAgo(n){
@@ -1428,6 +1494,41 @@ function demoHistory(endNet,endLiab){
   return out;
 }
 const sumRows=rows=>rows.reduce((s,r)=>s+(+r.value||0),0);
+function demoAssets(){
+  return [
+      {id:uid(),name:"Global Index Fund",cat:"Brokerage",value:112400,notes:"core position — example data"},
+      {id:uid(),name:"Dividend Growth Fund",cat:"Brokerage",value:38650,notes:"example data"},
+      {id:uid(),name:"Small Cap Fund",cat:"Brokerage",value:14200,notes:"example data"},
+      {id:uid(),name:"Checking / savings",cat:"Cash",value:18500,notes:"day-to-day account"},
+      {id:uid(),name:"Emergency fund",cat:"Cash",value:24000,notes:"6 months of essentials"},
+      {id:uid(),name:"Treasury bill ladder",cat:"Cash",value:15000,notes:"rolling 3-month rungs"},
+      {id:uid(),name:"401(k)",cat:"Retirement",value:96800,notes:"target-date fund"},
+      {id:uid(),name:"Roth IRA",cat:"Retirement",value:41300,notes:"example data"},
+      {id:uid(),name:"HSA",cat:"HSA / FSA",value:9400,notes:"invested above the cash floor"},
+      {id:uid(),name:"Primary residence",cat:"Real estate",value:415000,notes:"est. market value"},
+      {id:uid(),name:"Car",cat:"Vehicle",value:19500,notes:"est. resale value"},
+      {id:uid(),name:"Digital assets",cat:"Crypto",value:6200,notes:"example data"}
+  ];
+}
+function demoLiabilities(){
+  return [
+      {id:uid(),name:"Mortgage",cat:"Mortgage",value:268000,notes:"example data"},
+      {id:uid(),name:"Auto loan",cat:"Auto loan",value:11400,notes:"example data"},
+      {id:uid(),name:"Credit card",cat:"Credit card",value:1850,notes:"paid in full monthly"}
+  ];
+}
+// Savings goals. fundedBy names an asset CATEGORY from demoAssets() above (or "" for
+// "everything accessible"), so the demo's progress bars are read from the demo ledger and
+// move when it does.
+function demoGoals(){
+  return [
+      {id:uid(),name:"Emergency fund — 6 months",target:36000,targetDate:"",fundedBy:"Cash",monthly:400},
+      {id:uid(),name:"House deposit",target:80000,targetDate:"2029-06-01",fundedBy:"Brokerage",monthly:900},
+      {id:uid(),name:"Replace the car",target:25000,targetDate:"2028-01-01",fundedBy:"",monthly:250}
+  ];
+}
+
+/* @variant:begin seed */
 function seed(){
   const assets=demoAssets(), liabilities=demoLiabilities();
   const netNow=sumRows(assets)-sumRows(liabilities), liabNow=sumRows(liabilities);
@@ -1444,6 +1545,7 @@ function seed(){
     liveCalHeight:500,   // px height of the TradingView box — user-set via the corner grip
     setMenuScale:1,      // ⚙ menu size, text and spacing together — user-set via its corner grip
     tapePaused:false,    // ticker tape stopped by the user (WCAG 2.2.2 pause control)
+    exampleData:false,   // true while the ⚙ example dataset is loaded — drives the banner
     autoRefresh:"off",   // off | stale | always — default off keeps page load request-free
     lastFetch:"",        // YYYY-MM-DD of the last fully successful macro fetch
     archive:{lastQuarter:"",lastAt:"",salt:"",head:"",count:0},   // nudge + truncation anchor only
@@ -1484,39 +1586,6 @@ function seed(){
     budget:seedBudget()
   };
 }
-function demoAssets(){
-  return [
-      {id:uid(),name:"Global Index Fund",cat:"Brokerage",value:112400,notes:"core position — example data"},
-      {id:uid(),name:"Dividend Growth Fund",cat:"Brokerage",value:38650,notes:"example data"},
-      {id:uid(),name:"Small Cap Fund",cat:"Brokerage",value:14200,notes:"example data"},
-      {id:uid(),name:"Checking / savings",cat:"Cash",value:18500,notes:"day-to-day account"},
-      {id:uid(),name:"Emergency fund",cat:"Cash",value:24000,notes:"6 months of essentials"},
-      {id:uid(),name:"Treasury bill ladder",cat:"Cash",value:15000,notes:"rolling 3-month rungs"},
-      {id:uid(),name:"401(k)",cat:"Retirement",value:96800,notes:"target-date fund"},
-      {id:uid(),name:"Roth IRA",cat:"Retirement",value:41300,notes:"example data"},
-      {id:uid(),name:"HSA",cat:"HSA / FSA",value:9400,notes:"invested above the cash floor"},
-      {id:uid(),name:"Primary residence",cat:"Real estate",value:415000,notes:"est. market value"},
-      {id:uid(),name:"Car",cat:"Vehicle",value:19500,notes:"est. resale value"},
-      {id:uid(),name:"Digital assets",cat:"Crypto",value:6200,notes:"example data"}
-  ];
-}
-function demoLiabilities(){
-  return [
-      {id:uid(),name:"Mortgage",cat:"Mortgage",value:268000,notes:"example data"},
-      {id:uid(),name:"Auto loan",cat:"Auto loan",value:11400,notes:"example data"},
-      {id:uid(),name:"Credit card",cat:"Credit card",value:1850,notes:"paid in full monthly"}
-  ];
-}
-// Savings goals. fundedBy names an asset CATEGORY from demoAssets() above (or "" for
-// "everything accessible"), so the demo's progress bars are read from the demo ledger and
-// move when it does.
-function demoGoals(){
-  return [
-      {id:uid(),name:"Emergency fund — 6 months",target:36000,targetDate:"",fundedBy:"Cash",monthly:400},
-      {id:uid(),name:"House deposit",target:80000,targetDate:"2029-06-01",fundedBy:"Brokerage",monthly:900},
-      {id:uid(),name:"Replace the car",target:25000,targetDate:"2028-01-01",fundedBy:"",monthly:250}
-  ];
-}
 /* @variant:end seed */
 // tolerate older saves / partial imports that predate or half-populate the budget block
 function normalizeBudget(){
@@ -1546,11 +1615,14 @@ function normalizeAddons(){
   if(!Array.isArray(state.chat.messages))state.chat.messages=[];
   if(!state.archive||typeof state.archive!=="object")state.archive={lastQuarter:"",lastAt:"",salt:"",head:"",count:0};
 }
-/* @variant:begin seedBudget */
+// The filled budget that accompanies the example ledger. Hoisted out of the @variant block for
+// the same reason as the rest of the example dataset: build.py replaces that block, so the
+// end-user build's own seedBudget() ships every amount at 0 and "Load example data" would
+// otherwise drop the user on a Budgeting tab of zeros.
 // The demo build fills every amount so the Budgeting tab, its totals and the future-spend
 // projection all have something to draw. The other builds ship this same row template with
 // every amount at 0 — build.py swaps the block, so the ROW LIST only exists in one place here.
-function seedBudget(){
+function exampleBudget(){
   const inc=(name,cat,amount,optional)=>({id:uid(),name,cat,amount,optional:!!optional,notes:""});
   const exp=(name,cat,kind,amount,limit,optional)=>({id:uid(),name,cat,amount,limit,kind,optional:!!optional,notes:""});
   return {
@@ -1578,6 +1650,11 @@ function seedBudget(){
     assumptions:{rate:7,years:30}
   };
 }
+
+/* @variant:begin seedBudget */
+// Each build's first-run budget. The demo opens on the filled example; the others ship the same
+// ROW LIST with every amount at 0 (build.py swaps this block), so the rows exist in one place.
+function seedBudget(){return exampleBudget();}
 /* @variant:end seedBudget */
 
 // The business equivalent of the seedBudget() template above. It lives OUTSIDE the @variant block
@@ -1688,6 +1765,7 @@ function sanitizeState(d){
   s.liveCalHeight=clampLiveCal(sNum(o.liveCalHeight,500));
   s.setMenuScale=clampSetScale(sNum(o.setMenuScale,1));
   s.tapePaused=o.tapePaused===true;
+  s.exampleData=o.exampleData===true;   // or the banner vanishes on reload while the fake data stays
   s.autoRefresh=sPick(o.autoRefresh,["off","stale","always"],"off");
   s.lastFetch=sStr(o.lastFetch,40);
 
@@ -2072,7 +2150,7 @@ const LANGS={
     "budget.netCashFlow":"Net cash flow","budget.savingsRate":"Savings rate","budget.discretionary":"Discretionary",
     "budget.cashInOut":"Cash in / cash out","budget.netMonthlyCashFlow":"Net monthly cash flow",
     "budget.spendVsLimit":"Spend vs limit","budget.futureSpend":"Future spend",
-    "budget.returnPct":"Return %","budget.years":"Years","budget.addRow":"Add Row",
+    "budget.returnPct":"Return %","budget.years":"Years","budget.addRow":"Add row",
     "goals.title":"Goals","goals.name":"Goal","goals.funded":"Funded by",
     "goals.target":"Target","goals.perMonth":"Per month","goals.date":"Target date",
     "goals.progress":"Progress","goals.add":"Add goal",
@@ -3873,10 +3951,13 @@ function renderArchiveList(){
   const box=document.getElementById("archItems");
   if(!box)return;
   if(!cryptoOK()){
-    box.innerHTML=`<div class="set-note">Archiving needs your browser's built-in encryption, which isn't `+
-      "available to this page here. Open SomiFinance in Chrome, Edge or Safari, or serve its folder "+
-      "(<code>python3 -m http.server</code>) and open it from <code>http://localhost</code>. "+
-      "It will never fall back to an unencrypted file.</div>";
+    // Reached by an ordinary user whose browser withholds crypto.subtle from a file:// page, so
+    // the fix has to be something they can actually do. It used to tell them to run a Python web
+    // server from a terminal, which is not an instruction for this audience.
+    box.innerHTML=`<div class="set-note">Archiving needs the encryption built into your browser, and `+
+      "this browser isn't offering it to a file opened from disk. <b>Try opening SomiFinance in "+
+      "Chrome, Edge or Safari</b> — it works there. Everything else in the app still works here, and "+
+      "<b>\u2b33 Export</b> remains your backup either way. Archives are never written unencrypted.</div>";
     return;
   }
   const S=archiveSession;
@@ -3987,10 +4068,14 @@ function renderArchive(){
 
 /* ---------- export / import ---------- */
 function exportJSON(){
+  // Date AND time. Date alone meant two exports on one day collided, and the browser silently
+  // renamed the second to "(1)" — so the copy you wanted was decided by filename luck.
+  const d=new Date(), pad=n=>String(n).padStart(2,"0");
+  const name="somifinance-"+today()+"-"+pad(d.getHours())+pad(d.getMinutes())+".json";
   const blob=new Blob([JSON.stringify(state,null,2)],{type:"application/json"});
   const a=document.createElement("a");a.href=URL.createObjectURL(blob);
-  a.download="somifinance-"+today()+".json";a.click();URL.revokeObjectURL(a.href);
-  toast("Exported somifinance-"+today()+".json");
+  a.download=name;a.click();URL.revokeObjectURL(a.href);
+  toast("Exported "+name);
 }
 // A backup file is untrusted input: it is meant to be shared and machine-generated (the footer
 // invites exactly that). Everything goes through sanitizeState(), which whitelists fields and
@@ -4003,7 +4088,7 @@ function importJSON(file){
     const prev=state;
     try{
       const d=JSON.parse(r.result);
-      if(!d||typeof d!=="object"||!Array.isArray(d.assets))throw 0;
+      if(!d||typeof d!=="object"||!Array.isArray(d.assets))throw new Error("shape");
       state=sanitizeState(d);
       // A pending Undo points at a row from the dataset being replaced. Honouring it after an
       // import would splice a stranger's row into the newly imported ledger.
@@ -4016,7 +4101,12 @@ function importJSON(file){
     }catch(e){
       state=prev;
       try{boot(true);}catch(e2){}
-      toast("That file didn't look like a SomiFinance backup.");
+      // The reason used to be swallowed entirely, so "didn't look right" was all anyone got for
+      // a truncated file, a wrong file type and a genuine bug alike.
+      const why=(e&&e.name==="SyntaxError")?"it isn't valid JSON — it may have been truncated or edited"
+        :(e&&e.message==="shape")?"it's valid JSON but not a SomiFinance backup (no assets list)"
+        :"it couldn't be read: "+((e&&e.message)||"unknown error");
+      toastErr("Couldn't import "+(file.name||"that file")+" — "+why+". Nothing was changed.");
     }
   };
   r.readAsText(file);
@@ -4031,10 +4121,10 @@ function maybeBanner(){
   const noAssets=state.assets.length===0;
   if(days>=7||noSnaps){
     document.getElementById("bannerTxt").innerHTML=noAssets
-      ? `Your ledger is empty. <b>Open the ledger</b> and add your first account, then head to <b>Overview</b> and hit Refresh to log your first data point.`
+      ? `Nothing here yet. Open <b>Assets &amp; Liabilities</b> and add your first account, then press <b>Refresh</b> on Overview to log your first data point.`
       : noSnaps
-      ? `Nothing snapshotted yet. <b>Open the ledger</b>, confirm today's values, then head to <b>Overview</b> and hit Refresh to log your first data point.`
-      : `Last updated <b>${Math.round(days)} days</b> ago. <b>Open the ledger</b> to update values, then hit Refresh on the <b>Overview</b> tab to log a snapshot.`;
+      ? `No snapshots yet. Check today's figures in <b>Assets &amp; Liabilities</b>, then press <b>Refresh</b> on Overview to log your first data point.`
+      : `Last updated <b>${Math.round(days)} days</b> ago. Update your figures in <b>Assets &amp; Liabilities</b>, then press <b>Refresh</b> on Overview to log a snapshot.`;
     b.classList.remove("bad");   // shared element — showSaveBlocked() may have marked it
     b.hidden=false;
   }else b.hidden=true;
@@ -4045,7 +4135,7 @@ function renderFoot(){
   document.getElementById("foot").innerHTML=
     `Data lives only in this browser via localStorage${canPersist?"":" <b style='color:var(--down)'>(blocked here — export to keep your data)</b>"}. `+
     `No account, no server — your financial data never leaves your machine. Back up with <code>Export</code>. `+
-    `To wire in live prices/rates later, your pipeline can write the same JSON shape you get from Export and you re-Import it. `+
+    `An Export file is plain JSON, so anything that can write that shape can feed this page — export once to see it. `+
     `Not financial advice.`;
 }
 
@@ -4980,7 +5070,7 @@ function chatStatusText(){
   if(chatConn.kind==="error")return "Ollama responded with an error (HTTP "+chatConn.status+").";
   if(chatConn.kind==="badurl")return "That isn't a loopback address (127.0.0.1, localhost or [::1]).";
   return chatConn.everOk
-    ?"Couldn't tell this time — the browser console has the exact error."
+    ?"Couldn't tell what went wrong this time. If it keeps happening, check that Ollama is running."
     :"Nothing answered at "+state.chat.endpoint+".";
 }
 
@@ -5246,6 +5336,54 @@ function initChat(){
   },true);
 }
 
+/* ---------- example data ----------
+   Someone who was emailed SomiFinance.html has no way to see the app with anything in it: the
+   demo is a separate download mentioned only in the README. This fills the install with the
+   same fake dataset the demo build ships, so they can look around before deciding.
+
+   OFFERED ONLY ON A GENUINELY FRESH INSTALL (isFreshInstall()), and that gate is doing more
+   work than it looks. It means:
+     - there is nothing to destroy, so this needs no heavy confirm and no export-first offer;
+     - it can never interact with the quarterly archive. state.archive.head and .count are the
+       truncation anchor — the only thing that can notice entries were silently removed from an
+       archive file — and the way back out is a reset, which clears them. Blocking archiving
+       while example data is loaded would prevent CORRUPTION but not that LOSS. Requiring an
+       empty install makes the whole situation unreachable instead.
+
+   The way back is deliberately the existing reset: one destructive path, already gated and
+   already correct, rather than a second one written for this. */
+function loadExampleData(){
+  const a=demoAssets(), l=demoLiabilities();
+  const net=sumRows(a)-sumRows(l), liab=sumRows(l);
+  state.assets=a;
+  state.liabilities=l;
+  state.goals=demoGoals();
+  state.history=demoHistory(net,liab);
+  state.budget=exampleBudget();
+  normalizeBudget();
+  state.exampleData=true;
+  state.onboarded=true;    // or the end-user build bounces straight back to the welcome screen
+  state.hintsDone=true;
+  state.updated=today();
+  save();
+  boot(true);
+  show("overview");
+  toast("Example data loaded — this is someone else's made-up money, not yours.");
+}
+// Persistent, and deliberately not dismissible: the risk this guards against is exporting a
+// demo portfolio believing it is your own, which a banner you can close does not prevent.
+// Re-evaluated on every boot rather than once: adding a single asset takes the offer away,
+// because by then loading example data would no longer be free.
+function renderExampleOffer(){
+  const w=document.getElementById("exampleWrap");
+  if(w)w.hidden=!(isFreshInstall()&&!state.exampleData);
+}
+function renderExampleBanner(){
+  const b=document.getElementById("exampleBanner");
+  if(!b)return;
+  b.hidden=!state.exampleData;
+}
+
 /* ---------- modal focus containment ----------
    showWelcome(), showResetConfirm(), showArchiveDialog() and showImportConfirm() all declare
    role="dialog" aria-modal="true", and until now none of them meant it: there was no focus trap
@@ -5279,10 +5417,14 @@ function boot(rerender){
   applyTheme(state.theme||"terminal");
   applySetMenuScale();
   applyTapePause();
+  renderExampleBanner();
+  renderExampleOffer();
   // The footer year was a literal in three places. This file is downloaded once and kept, so a
   // baked year silently ages into looking abandoned. Falls back to the markup's value if the
   // element is ever missing.
   {const wy=document.getElementById("wmYear");if(wy)wy.textContent=String(new Date().getFullYear());}
+  {const vz=document.getElementById("wmVer");if(vz)vz.textContent="v"+APP_VERSION;}
+  {const av=document.getElementById("aboutVer");if(av)av.textContent="v"+APP_VERSION;}
   renderThemeList();
   renderAutoRefreshList();
   renderLangList();
@@ -5414,6 +5556,25 @@ function init(){
   });
   document.getElementById("exportBtn").addEventListener("click",exportJSON);
   document.getElementById("tapePause").addEventListener("click",toggleTapePause);
+  // Previously impossible. "Skip for now" set hintsDone permanently, and the only restart path
+  // was gated on already standing on the Ledger while boot() always lands on Overview — so a
+  // user who closed the tab mid-tour could never get it back either.
+  document.getElementById("tourBtn").addEventListener("click",e=>{
+    e.stopPropagation();
+    closeThemeMenu();
+    state.hintsDone=false;
+    save();
+    show("ledger");
+    setTimeout(()=>startHints(),260);
+  });
+  document.getElementById("exampleBtn").addEventListener("click",e=>{
+    e.stopPropagation();
+    closeThemeMenu();
+    loadExampleData();
+  });
+  // Routes into the existing reset rather than inventing a second destructive path. With example
+  // data loaded there is nothing of the user's own to lose, but the dialog still explains itself.
+  document.getElementById("exampleClear").addEventListener("click",e=>{e.stopPropagation();showResetConfirm();});
   document.getElementById("importBtn").addEventListener("click",()=>document.getElementById("importFile").click());
   document.getElementById("importFile").addEventListener("change",e=>{
     const f=e.target.files[0];

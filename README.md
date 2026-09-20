@@ -72,9 +72,10 @@ SomiFinance is a single-page dashboard for tracking your net worth alongside the
 - **Optional auto-refresh** of Treasury and CPI data on load (ships off — see below)
 - A gentle reminder banner if your numbers haven't been touched in a while
 - **Start over** — ⚙ → Reset all data clears everything and returns you to the first-run screen. It warns you what will go, offers to export a backup first, and won't proceed until you type `Yes`
-- Keyboard shortcuts (`1`–`6` to switch tabs, `Esc` to close menus)
+- **See it with data in it** — ⚙ → Load example data fills a new install with a made-up portfolio so you can look around before entering anything real. Offered only while your install is still empty, and a banner says so the whole time it's loaded
+- **Undo a deleted row** — `Ctrl`/`⌘`+`Z`, or the Undo button on the message that appears
+- Keyboard shortcuts (`1`–`6` to switch tabs, `Esc` to close menus). Everything is reachable without a mouse, including reordering budget rows (`Alt`+`↑`/`↓`) and resizing panels
 - Layout that follows your window — the shell, tiles and type scale up on a large monitor and collapse to a single column on a small one
-- Reset your instance to Factory Specs with an integrated Reset button within the settings (and you have the option to back-up your data, and you must type 'Yes' before the reset)
   
 <img width="665" height="598" alt="Screenshot 2026-09-07 at 11 34 42" src="https://github.com/user-attachments/assets/c783c2af-1bd0-4c39-b9b5-d5f0d374a98d" />
 

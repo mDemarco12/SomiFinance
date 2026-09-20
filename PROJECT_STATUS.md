@@ -2,7 +2,7 @@
 
 > **Maintenance rule:** this doc is scanned by agents working on this project. Track it with `Scan count` below — increment it by 1 every time this doc is read for context. **On every 4th scan** (count reaches a multiple of 4), lint the whole doc against the current state of `SomiFinanceDemo.html` before doing anything else: move shipped items out of "Could be done," delete resolved "Needs polish" / "Rebrand to-do" items, add anything newly true. Don't let this drift from the actual code.
 >
-> **Scan count:** 7 (GTM hardening pass — three-reviewer audit, 25 fixes, full-app QA suite; see **GTM hardening** under Done; previously: quarterly archive — encrypted append-only audit record, see **Security posture** and **Done**; previously: full doc lint against the code — goal-aware categories, reset, name colour, fluid sizing, TradingView re-theme fix; previously: three-build split — `build.py`, per-build storage keys, empty-ledger end-user build; previously: security pass — CSP, sandboxed TradingView frame, `sanitizeState()`, genericized seed, history purge; see **Security posture** below)
+> **Scan count:** 8 (pre-launch polish pass — 46 items in six commits, linted against the code on this scan per the rule above; see **Pre-launch polish** under Done; previously: GTM hardening pass — three-reviewer audit, 25 fixes, full-app QA suite; see **GTM hardening** under Done; previously: quarterly archive — encrypted append-only audit record, see **Security posture** and **Done**; previously: full doc lint against the code — goal-aware categories, reset, name colour, fluid sizing, TradingView re-theme fix; previously: three-build split — `build.py`, per-build storage keys, empty-ledger end-user build; previously: security pass — CSP, sandboxed TradingView frame, `sanitizeState()`, genericized seed, history purge; see **Security posture** below)
 >
 > **Anchor style:** reference code by **symbol name** (`renderBudget()`, `#tvBox`, `THEMES`) — never by line number. A previous version used `file#L123` links and all 26 went stale the moment Chart.js was inlined. Symbol names stay greppable across edits.
 
@@ -10,7 +10,7 @@
 
 - **What it is:** a single-file, offline-first personal net-worth & macro dashboard. Vanilla HTML/CSS/JS, no bundler, no backend. Persists to `localStorage`. There is one build step, and it is not a compiler: `build.py` projects the source into the other two builds (see **Three builds** below). Every output is still a standalone single file that runs by double-clicking it.
 - **Genuinely offline on load.** Chart.js v4.4.1 is **inlined** into the file (~205 KB minified, 13 lines, MIT banner preserved, `sourceMappingURL` stripped) — no CDN tag, and the page's own two script blocks are both inline. Opening the page fires **zero** network requests **by default** (auto-refresh ships `off` — see Macro Signals). Only three things ever reach out, all user-triggered: the TradingView widget on first Economic Calendar view, the Treasury/BLS fetches on Refresh from Macro Signals, and the FX-rate fetch when a non-USD currency is selected. The single remaining third-party `script src` is TradingView's, and it lives inside the sandboxed frame's `srcdoc`, never in this document — see **Security posture**. Don't "optimize" Chart.js back to a CDN — inlining is deliberate (it also removes an unpinned-CDN supply-chain path, since the old tag had no SRI hash).
-- **File:** `SomiFinanceDemo.html` (~4540 lines / ~455 KB, one file — markup, styles, and script all inline; ~200 KB of that is the inlined Chart.js, so hand-written code is ~255 KB). The quarterly archive added ~550 lines.
+- **File:** `SomiFinanceDemo.html` (~5627 lines / ~528 KB, one file — markup, styles, and script all inline; ~200 KB of that is the inlined Chart.js, so hand-written code is ~255 KB). The quarterly archive added ~550 lines.
 - **Three builds, one source.** `SomiFinanceDemo.html` is the **only file anyone edits**. `build.py` projects it into the other two. Never hand-edit a generated file — it carries a DO-NOT-EDIT banner and the next build silently overwrites it.
 
   | File | What it is | Git |
@@ -322,6 +322,79 @@ Three reviewers (security/data-integrity, financial correctness, product polish 
 - **Phone width**: `.topbar` wraps under 520px; no horizontal page overflow at 390/360px. Inline SVG favicon (data URI, zero requests). Real builds ship `inflation:[]`. `build.py`'s leak guard now also harvests whole multi-word row names, identifier-shaped tokens from notes/calendar (tickers, digit-bearing ids — never prose words) and the profile name; `GENERIC_NAMES` gained common multi-word account names. Dead `INTRO_ONCE_PER_SESSION` removed.
 - **QA**: three Playwright suites over `file://` — archive (78), settings menu (59) and a full-app regression suite (101 checks: every tab, CRUD on every table, grouped/hostile number entry, local-date in Honolulu and Tokyo, FX offline + mocked rates, `__proto__` imports, 1005-row history cap, shortcuts under modals, over-limit, save-blocked notice, per-theme contrast, 390/360px, favicon, a11y, export/import round-trip, reset) — all green in Chrome, with Firefox/WebKit smoke subsets. Suites live outside the repo (scratchpad); see Key facts for the two Playwright gotchas.
 
+**Savings goals** (Budgeting tab)
+- A target, a target date, a monthly contribution and the account category that funds it
+  (`renderGoals()` / `goalRowHTML()` / `wireGoalRows()` / `goalFundOptions()`; `renderGoalList()`
+  drives the ⚙ picker; `demoGoals()` seeds the example set).
+- **Progress is derived, never stored.** A goal reads the live balance of whatever `CAT_SETS`
+  category `fundedBy` names, so it moves as the ledger moves and there is no second number to keep
+  in sync. `fundedBy:""` means "not tied to an account" and shows contributions only.
+- Shows the monthly figure needed to land on the target date, and warns when the goals together
+  commit more than net cash flow — the one place the Budgeting tab cross-checks itself.
+- `MAX_GOALS` = 50, sanitized like every other row list. `fundedBy` is a free string for the same
+  reason `cat` is: a goal must survive a goal-type switch that renames the categories.
+- **This section was missing entirely until scan 8**, despite being a headline README feature with
+  two screenshots. It is the clearest example of why the lint rule at the top of this file exists.
+
+
+**Pre-launch polish pass** (scan 8 — six commits, 46 items)
+Three audit agents swept animations/empty states, every interactive control, and the first-run
+experience; an Opus manager verified each commit and a Sonnet agent ran lint + QA. Highlights,
+grouped by what they protect:
+
+- **A real correctness bug.** Three delete handlers ran `findIndex` → `splice(i,1)` with no `-1`
+  guard, so a miss removed the **last row of the array** instead. Reachable because the handlers
+  closed over `arr` while `importJSON()` replaces `state` wholesale. All four tables now go through
+  one `deleteRow(path,id)` that resolves the array from live `state` per call — which is also what
+  makes undo safe, since an undo closure capturing `arr` would reintroduce the very bug it fixes.
+  `undoBuf` holds `{path,index,row,seq}`, is ephemeral like `chatConn`, and is cleared by
+  `importJSON()`. Undo is offered in the toast **and** on Ctrl/⌘-Z, because a few-second toast
+  button is not a fair sole recovery affordance for a keyboard user.
+- **`toast()` is no longer single-slot.** It queues, in three classes: plain (collapses — only the
+  newest waits), error (`toastErr()`, preserved, deduped) and action (always preserved). A plain
+  FIFO was tried first and was wrong: action toasts sit for seconds, so a burst left the user
+  reading stale notices. The live region is the message **span**, so an action button is its
+  sibling — a control inside `aria-live` gets the region re-announced and never takes focus.
+- **The app stated a falsehood on the landing tab.** The Overview chart note read "One snapshot
+  logged so far" in the branch that only ever runs with **zero** snapshots (`pts` always carries
+  the live point). Branch-aware now, as are the Macro, budget and future-spend empty states —
+  real yield's copy names the actual cause, since it needs a CPI print dated at or *before* a
+  yield reading and can be empty with both series populated.
+- **Seeded data no longer rots.** `nextReleases()` and `dayOffset()` build the calendar at first
+  open; `build.py` passes it through as `RawJS("nextReleases()")` so the emitted file stays
+  byte-stable and `--check` stays meaningful. **Verified: two rebuilds are byte-identical.** The
+  author's `"verify date"` note and a hardcoded 2026-08-20 yield are gone from both builds.
+- **Keyboard parity.** Focus rings on the tab menu and every picker; Alt+↑/↓ reorders budget rows
+  (previously mouse-only, with no `tabindex`, `role` or key handler at all); focus traps and
+  immediate autofocus in all four dialogs — the old 480ms timer meant an early typist could put an
+  **archive passphrase into a ledger cell**, which then persisted it; `role="slider"` with live
+  values on both resize grips, Home to reset, and the keyboard save debounced via `saveSoon()`.
+- **Theme correctness.** `color-scheme` comes off a `scheme` field on each `THEMES` entry, written
+  by `applyTheme()` — it cannot be a static `:root` rule, because themes are applied as inline
+  custom properties with no `data-theme` attribute to select on. Several dark literals that
+  `applyTheme()` could never rewrite (table borders, row hover, banner gradient, importance tags,
+  a raw hex in the footer) are `color-mix()` off live tokens now.
+- **Example data** (`loadExampleData()`), offered in ⚙ **only on a genuinely empty install**
+  (`isFreshInstall()`, which measures budget *amounts*, not row counts — every build seeds rows and
+  a calendar). That gate is load-bearing: it means the feature can never touch `state.archive`,
+  whose `head`/`count` are the truncation anchor, and whose loss the way-back-out (a reset) would
+  otherwise cause. `exampleData` is sanitized, or the banner would vanish on reload while the fake
+  data stayed. The dataset was hoisted **outside** the `seed` variant block so the end-user build
+  has it at all; it takes no variant input, ever.
+- Import confirms before replacing everything, and always asks — an emptiness heuristic that is
+  wrong destroys work to save one click. Clearing a numeric cell keeps the previous value
+  (`commitNum()`); `fromDisplay("")` returning 0 used to zero an account silently while the blur
+  re-format left the box *looking* empty. Ticker tape has a pause control (WCAG 2.2.2). The tour
+  can be replayed. `APP_VERSION` is surfaced in About and the footer, and the copyright year is
+  computed. Repo gained `LICENSE` (MIT), `SECURITY.md` and issue templates.
+- **QA:** four Playwright suites over `file://` — full-app 102, archive 70, settings menu 61,
+  keyboard/undo 60 — plus per-theme contrast and narrow-width overflow checks. Lint clean: no
+  unresolved ids, no dead functions, no `console.log`, i18n dicts in sync at 71 keys each. The
+  archive's rejection paths were re-verified independently by **mutation testing** (deleting the
+  KDF bounds check and confirming the suite fails), because a toast-helper change had made three
+  archive tests pass again and that needed to be proven not to be masking.
+
+**Reset all data**
 **Reset all data**
 - ⚙ → **Reset all data** opens `showResetConfirm()`, which reuses the first-run overlay (`.intro-wipe.hold` + `.welcome`) in `--down` rather than the accent, so a destructive dialog never wears the friendly colour. It names what will go, states there is no server copy to recover from, offers an **Export a backup first** button wired straight to `exportJSON()`, and gates the confirm button behind typing `RESET_PHRASE` exactly.
 - **The phrase is case-sensitive on purpose** (trimmed, but `yes`/`YES` are rejected). A case-insensitive match makes the gesture reflexive, which is the one thing a destructive confirm must not be.
@@ -358,7 +431,7 @@ Three reviewers (security/data-integrity, financial correctness, product polish 
 - FX fetch is **deliberately not gated by `state.autoRefresh`** — unlike opt-in Treasury/CPI data, currency is an explicit user selection, and a missing rate would silently mislabel USD figures as ¥/€. It fetches once a day whenever a non-USD currency is active, falls back to the last cached rate, and marks the picker `(rate unavailable — shown in USD)` when no rate exists for the selected currency — figures then stay in USD (`fxRateKnown()`) rather than showing USD numbers under a foreign symbol.
 
 **Settings menu (⚙)**
-- Eight collapsible sections (`.set-sec` / `.set-head` / `.set-body`): Theme, Auto-refresh, 語 Language, € Currency, ◎ Tracking, ✎ Your name, ✦ Assistant, ⧉ Quarterly archive — plus a **Reset all data** button below them. The reset is deliberately *not* a `.set-sec`: `openSetSection()` treats every `.set-head` as an accordion panel, and a one-shot destructive action is not a picker. **Accordion — one open at a time** (`openSetSection()`), all collapsed on every open, with the active value shown in each collapsed header (`setSectionCurrent()`). Wired once by `initSettingsSections()`.
+- Eight collapsible sections (`.set-sec` / `.set-head` / `.set-body`): Theme, Auto-refresh, 語 Language, € Currency, ◎ Tracking, ✎ Your name, ✦ Assistant, ⧉ Quarterly archive — plus **◷ Replay the intro hints**, a conditional **◆ Load example data** (shown only while `isFreshInstall()`), and a **Reset all data** button below them. The reset is deliberately *not* a `.set-sec`: `openSetSection()` treats every `.set-head` as an accordion panel, and a one-shot destructive action is not a picker. **Accordion — one open at a time** (`openSetSection()`), all collapsed on every open, with the active value shown in each collapsed header (`setSectionCurrent()`). Wired once by `initSettingsSections()`.
 - `.theme-list` has `max-height` + `overflow-y:auto` + **`overscroll-behavior:contain`** — that last property is what stops scrolling the menu from chaining to the page behind it.
 - **User-resizable, and the contents scale with it.** A corner grip (`#setMenuResize`, bottom-left, mirroring `#tvResize`'s conventions — pointer events + `setPointerCapture`, arrow-key nudging, drag saves once on release while a keypress saves immediately) drives `state.setMenuScale` (clamped `0.85`–`1.6` by `clampSetScale()`, default `1`). `applySetMenuScale()` is the sole writer of `--set-scale` on `#themeList`. **Every fixed-px size inside the menu is `calc(basePx * var(--set-scale,1))`** — font-sizes, paddings, gaps, the theme swatch icons, even the one existing fluid-token exception (`.set-danger button`'s `var(--l-micro)`) — so scale 1 is pixel-identical to before this feature and every other value moves in lockstep with it. **Deliberately NOT scaled:** border-width, border-radius and box-shadow (decoration, not legibility). `max-height` is `min(70vh,calc(520px * var(--set-scale,1)))` — the 520px term scales so a bigger menu is actually taller, while the `70vh` term is what still keeps it on screen. It was a flat `520px` at first, which meant the box stopped growing at ~15% up while its rows kept inflating: you got a scrollbar and stretched-looking rows instead of a bigger menu.
 - **Each drag axis is normalised by its own base dimension** (`initSetMenuResize()`). Both axes originally divided the pointer delta by `250` — the base *width* — but the menu is ~1.8x taller than it is wide, so a downward drag resized it 1.8x faster than the cursor moved (100px of drag jumped the scale to 1.4). `dy` now divides by the base *height*, so the bottom edge tracks the pointer the way the left edge always did; whichever axis asks for more growth drives the scale, so the grip never lags behind a diagonal drag. Bases are measured from the live box once on `pointerdown` (`offsetWidth`/`scrollHeight` ÷ the starting scale) — re-measuring mid-drag would feed a just-resized box back into its own input, and `scrollHeight` is the right height because `max-height` clips the visible box while the content is what the scale drives. The QA suite asserts the 1:1 tracking property rather than a scale number; the old test encoded the buggy divisor as `1.09`. `min-width` is capped to `calc(100vw - 24px)` for the same reason sideways, so a maxed-out scale can't force horizontal scroll on a narrow screen. The grip lives in a `position:sticky` footer row so it never scrolls out of reach, even with Quarterly Archive's long content open. Double-click resets to `1`.
@@ -417,20 +490,19 @@ Three reviewers (security/data-integrity, financial correctness, product polish 
 - PWA install support (manifest + service worker) — would also make the "offline" claim fully true on first load
 - State-schema *versioning* (the storage key is suffixed `.v1` and `sanitizeState()` now coerces any shape to the current one, but there's no explicit version field or migration ladder)
 - Cloud sync / accounts — explicitly out of scope today; footer says "your pipeline can write the same JSON shape... and you re-Import it"
-- Delete confirmation on ledger/calendar row deletes (currently instant, no undo)
 - In-app category management (add a custom category from the Overview tab, rename one in place) — **tried and deliberately reverted.** It added a "+" button + ✎ rename chips to the Allocation panel, but the user decided category management should happen implicitly: pick "Alternative Asset" (or any category) in the Ledger when adding an asset, name the asset itself, and it flows into the allocation automatically. Don't re-add a category CRUD UI without checking this decision first.
 
 ## Needs polish
 
-- No favicon, no OG tags (a `<meta name="description">` was added with the CSP)
+- No OG/Twitter card tags. The inline SVG favicon and `<meta name="description">` are in.
 - Onboarding copy is English-only, so a zh-Hant/zh-Hans user still gets an English first run. Now broader than it was: the welcome screen, all hint bodies (four goals × five steps), the reset confirm dialog, and the two newest ⚙ sections are all untranslated. Consistent with the "chrome only" i18n scope, but it's the one place that inconsistency is most likely to be noticed.
-- Monolithic single file (~455 KB, ~4540 lines) — ~200 KB of that is inlined Chart.js, so hand-written code is ~255 KB. Fine for personal use; worth a deliberate decision (keep as a distribution feature vs. split into modules) once this becomes a shipped product
+- Monolithic single file (~528 KB, ~5627 lines) — ~200 KB of that is inlined Chart.js, so hand-written code is ~328 KB. Fine for personal use; worth a deliberate decision (keep as a distribution feature vs. split into modules) once this becomes a shipped product
 
 ## Key facts for future me
 
 - Everything lives in one `<script>` block at the bottom of the file.
 - **There is no test suite in the repo.** The quarterly archive was QA'd with a throwaway Playwright script driving the real builds over `file://` (Chrome, plus Playwright's Firefox and WebKit). Two things will bite anyone automating this page again: **`page.wait_for_function()` fails** — it polls by evaluating a string, which the hash-only `script-src` correctly refuses (`EvalError … 'unsafe-eval'`); poll `page.evaluate()` from the test side instead, which isn't subject to page CSP. And **don't assign to a global named `status` in an evaluate** — it's `window.status` and coerces arrays to strings. Don't "fix" the first one with `bypass_csp`: the CSP is part of what needs testing.
-- State object shape: `{ updated, onboarded, hintsDone, profile{name,goal,nameColor}, theme, lang, currency, fx{rates{},lastFetch}, calendarOrder[], liveCalHeight, autoRefresh, lastFetch, assets[], liabilities[], history[], yields[], inflation[], calendar[], goals[], budget{}, chat{ack,endpoint,model,messages[]}, archive{lastQuarter,lastAt,salt,head,count} }`. No category-management fields — categories are just strings on each asset/liability. **All monetary values are stored in USD regardless of the selected display currency.**
+- State object shape: `{ updated, onboarded, hintsDone, profile{name,goal,nameColor}, theme, lang, currency, fx{rates{},lastFetch}, calendarOrder[], liveCalHeight, autoRefresh, lastFetch, assets[], liabilities[], history[], yields[], inflation[], calendar[], goals[], budget{}, chat{ack,endpoint,model,messages[]}, archive{lastQuarter,lastAt,salt,head,count}, tapePaused, exampleData }`. No category-management fields — categories are just strings on each asset/liability. **All monetary values are stored in USD regardless of the selected display currency.**
 - **Every new state field needs a line in `sanitizeState()`** — it is the single door into `state` (called by both `load()` and `importJSON()`) and supplies every default, so a field missing from it is silently dropped on the next load. This replaces the old per-scalar `load()` backfills, which are gone. `normalizeBudget()` still plays the same role for the budget block. See **Security posture**.
 - `budget` = `{ income:[{id,name,cat,amount,optional,notes}], expenses:[{id,name,cat,amount,limit,kind,optional,notes}], assumptions:{rate,years} }`, where `kind` ∈ `essential|discretionary`. Categories come from the active goal's `CAT_SETS` entry (personal 11 income / 21 expense; business 7 / 16). **`normalizeBudget()` is the compatibility shim** — called from BOTH `load()` and `importJSON()`; it backfills missing arrays/assumptions/ids and coerces a bad `kind`, so older saves and partial imports don't crash the tab. Any new budget field should get a default there too.
 - `assets`/`liabilities` items: `{ id, name, cat, value, notes }`. Categories come from the active goal's `CAT_SETS` entry (personal 13 assets incl. "Alternative Asset" and "Other" / 6 liabilities; business 10 / 6) — no user-editable category list. `colorForCat(c)` returns the curated color from `CAT_COLOR` when one exists, otherwise a deterministic hash-based color from `CAT_PALETTE`, so any category string (even a stray/legacy one) still renders with a stable color.
