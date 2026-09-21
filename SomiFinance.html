@@ -24,17 +24,20 @@
   "CSP script hashes". (It is kept there rather than here on purpose: it greps for script tags,
   and spelling them out in this comment would make it match its own documentation.)
 
-  frame-src / script-src also cover the sandboxed TradingView frame, which is a srcdoc document
-  and therefore INHERITS this policy — see ensureTradingViewWidget().
+  frame-src is what lets the sandboxed TradingView frame load at all — see
+  ensureTradingViewWidget(). It's a network-scheme navigation to TradingView's own embed URL, not
+  a srcdoc document, so it carries THEIR CSP, not ours; ours only decides whether we may frame it.
+  script-src no longer lists a TradingView host: we run none of their script anymore, only frame
+  their page directly.
   Note: a <meta> CSP silently ignores frame-ancestors, report-uri and sandbox.
 -->
 <meta http-equiv="Content-Security-Policy" content="
   default-src 'none';
-  script-src 'sha256-LEfI6wtiATeJWC0ehfYamH0fHWvD5leT9b99SJsRVXU=' 'sha256-o1RoO2G0YuRGS2iVTSzIpD34Ez9jEyxgaM4eHp182X0=' https://s3.tradingview.com;
+  script-src 'sha256-LEfI6wtiATeJWC0ehfYamH0fHWvD5leT9b99SJsRVXU=' 'sha256-3seZ1S6E/vYB7Exxp6boj3ASR7JqYs1u291NQgWyE/E=';
   style-src 'unsafe-inline';
   img-src data: https:;
   connect-src https://home.treasury.gov https://api.bls.gov https://open.er-api.com http://127.0.0.1:* http://localhost:*;
-  frame-src https://www.tradingview.com https://s.tradingview.com;
+  frame-src https://www.tradingview.com;
   base-uri 'none';
   object-src 'none';
   form-action 'none';">
@@ -319,7 +322,19 @@
      rule anyway — it costs nothing and still guards the pin. Never set tvBox.style.height
      directly; !important would ignore it and the drag would look frozen. */
   #tvBox{height:var(--live-cal-h,500px)!important}
-  #tvFrame{display:block;width:100%;height:100%;border:0}
+  /* color-scheme:light is load-bearing — it is what keeps this frame from painting white.
+     TradingView's embed document declares no color-scheme anywhere (not in its HTML, not in
+     any of the 25 CSS bundles it pulls), so its used value is light. Our root sets
+     color-scheme:dark in applyTheme(), and color-scheme INHERITS — so without this the frame
+     resolves to dark while the document inside resolves to light. Chrome refuses to composite
+     an iframe transparently when those two disagree: it paints an opaque canvas from the
+     EMBEDDED document's scheme, i.e. white. isTransparent:true still applied inside the frame,
+     so the widget's own background really was transparent — it was just revealing that white
+     canvas instead of the panel, with TradingView's dark text tokens sitting on top of it.
+     Pinning the frame to light makes the two agree, the canvas stays transparent, and #tvBox's
+     panel shows through. Static light is right for both polarities: TradingView's declared
+     scheme doesn't change with colorTheme, and under Latte our root is already light. */
+  #tvFrame{display:block;width:100%;height:100%;border:0;color-scheme:light}
   .panel h3 .tag{margin-left:auto;font-size:var(--l-tag);letter-spacing:.1em;color:var(--faint);font-family:var(--mono);text-transform:none}
 
   /* about page */
@@ -379,11 +394,19 @@
   /* editable table */
   table{width:100%;border-collapse:collapse;font-size:var(--t-body)}
   thead th{text-align:left;font-size:var(--l-micro);letter-spacing:.1em;text-transform:uppercase;color:var(--muted);font-weight:600;padding:8px 10px;border-bottom:1px solid var(--line)}
-  /* Numeric headers stay LEFT-aligned even though their cells are right-aligned. Right-aligning
-     them pins each label to its column's right edge, so a numeric header lands within one th's
-     padding (~20px, whatever the column widths are) of the next left-aligned header — Budget's
-     LIMIT and TYPE read as one jammed pair. Header alignment is deliberately independent of cell
-     alignment here; .cell.num / tfoot td.num / .sec-head td.num below keep the FIGURES right. */
+  /* A numeric header sits over its numbers. This was tried the other way first — headers left
+     while the figures stayed right — and reverted, so don't flip it a third time without reading
+     why. The cost of right-aligning is real: a numeric header pins to its column's right edge, so
+     it lands within one th's padding of the next LEFT-aligned header, which leaves Budget's LIMIT
+     about 20px from TYPE. That gap is padding-right + padding-left of the two th's, NOT a function
+     of column widths, so no width tweak can widen it. It was accepted anyway: a header floating a
+     column-width away from the figures it labels is worse than two headers sitting close.
+     Only columns whose cells are right-aligned carry .num, so this stays in step with them —
+     Budget's TYPE is deliberately NOT .num, because its values are left-aligned selects.
+     Load-bearing coincidence worth keeping: this th's 10px padding-right happens to equal the
+     figures' effective right inset (tbody td{padding:2px} + .cell{padding:8px}), which is the only
+     reason label and number share an edge. Don't "tidy" either number on its own. */
+  thead th.num{text-align:right}
   tbody td{padding:2px;border-bottom:1px solid color-mix(in srgb,var(--line) 55%,transparent)}
   tbody tr:hover{background:color-mix(in srgb,var(--panel-2) 45%,transparent)}
   .cell{width:100%;background:transparent;border:1px solid transparent;color:var(--ink);padding:8px;border-radius:5px;font-size:var(--t-body);font-family:var(--sans)}
@@ -559,7 +582,10 @@
   /* the table scrolls inside the panel rather than squashing — at phone width a squashed table
      wraps dates across two lines and clips the expanded ledger's figures */
   .arch-wrap{overflow-x:auto}
-  /* sits behind the TradingView frame and is covered when the widget paints */
+  /* The placeholder sits behind the TradingView frame. It is REMOVED on the frame's load
+     event, not merely covered — the frame composites transparently (see #tvFrame below), so
+     anything left behind it bleeds through the widget. It used to be hidden by the frame's
+     accidentally-opaque white canvas, which is the bug that masked this. */
   #tvBox{position:relative}
   .tv-ph{position:absolute;inset:0;display:flex;flex-direction:column;justify-content:center;
     padding:0 28px;text-align:center;color:var(--faint);font-size:var(--t-small);line-height:1.6}
@@ -576,6 +602,16 @@
   #tab-ledger .tbl-wrap>table,#tab-budget .tbl-wrap>table.goals-table{min-width:420px}
   .arch-wrap>table{min-width:680px}
   .arch-wrap td.tnum,.arch-wrap td.num{white-space:nowrap}
+  /* The archive's money columns were the one set of figures with no alignment rule at all, so
+     they rendered left while every other table's ran right. Cells were already marked num tnum,
+     so right-aligned was always the intent — the rule was just never written. Keyed on .num and
+     not .tnum on purpose: the "Archived on" timestamp carries only .tnum and stays left. This
+     also catches the expanded detail panes (archiveDetailHTML), whose mini-tables have no thead
+     and so have no header to fall out of step with.
+     padding-right matches the th's 10px so the label sits exactly over the figure. The editable
+     tables get that for free — their figures are .cell inputs (8px) inside a td (2px) — but these
+     are raw text in a td, which would otherwise land 8px out. */
+  .arch-wrap td.num{text-align:right;padding-right:10px}
   .arch-row{cursor:pointer}
   .arch-row:hover td,.arch-row:focus-visible td{background:var(--panel-2)}
   .arch-row:focus-visible{outline:2px solid var(--amber);outline-offset:-2px}
@@ -1094,8 +1130,9 @@
       <button class="reorder-handle" draggable="true" title="Drag to reorder" aria-label="Move this panel">↕</button>
       <h3><span id="hCalLive">Live economic calendar</span> <span class="tag">via TradingView</span></h3>
       <!-- ensureTradingViewWidget() injects a sandboxed iframe here on first Calendar view, not
-           on page load. The widget's own container lives inside that frame's document, so this
-           element stays empty — it exists only to carry the user's saved height. -->
+           on page load, pointed straight at TradingView's embed URL. The widget's own container
+           lives inside that frame's document, so this element stays empty — it exists only to
+           carry the user's saved height. -->
       <div id="tvBox" style="--live-cal-h:500px"></div>
       <div class="note">Read-only reference feed, not editable and not saved to your data — for your own curated dates (including personal ones like an options expiry or a vesting date), use the table above.</div>
       <button class="resize-grip" id="tvResize" title="Drag to resize · Home resets"
@@ -3011,25 +3048,37 @@ function applyCalendarOrder(){
 // contacted for users who don't open that tab.
 //
 // The frame is also REBUILT when the theme's light/dark polarity flips, because colorTheme is
-// baked into the widget config at injection and the opaque-origin frame below is unreachable
+// baked into the frame's src at injection and the opaque-origin frame below is unreachable
 // from our CSS — colorTheme is the only lever we have over its palette. Without the rebuild a
 // widget first shown under a dark theme keeps TradingView's pale-grey text after a switch to
 // Latte, and washes out against the light panel. tvTheme (not a plain "loaded" boolean) records
 // which polarity is on screen, so dark→dark switches and ordinary re-renders still bail out and
 // never re-ping TradingView.
 //
-// SECURITY — the loader runs inside a sandboxed iframe, never in this document.
-// TradingView's embed-widget-events.js is a third-party script we neither pin nor hash. Appended
-// to #tvBox directly (as it was originally) it executes same-origin: it could read the whole of
-// localStorage["somifinance.v1"] — every holding, value and note — rewrite the DOM, and call out
-// anywhere. Hosting it in a srcdoc iframe WITHOUT allow-same-origin puts it on an opaque origin,
-// so it can reach neither our storage nor our DOM.
+// SECURITY — we run NO third-party script. The frame is pointed straight at TradingView's
+// embed URL, and the config travels in the URL fragment exactly as their own loader would have
+// sent it. Their embed-widget-events.js used to do that for us; it is a script we can neither
+// pin nor hash, and appended to #tvBox directly (as it was originally) it executed same-origin:
+// it could read the whole of localStorage["somifinance.v1"] — every holding, value and note
+// — rewrite the DOM, and call out anywhere. Hosting it in a sandboxed srcdoc frame contained
+// that; not loading it at all removes the question.
 //
-// NEVER add allow-same-origin here. On a srcdoc frame that inherits THIS document's origin,
-// which hands the script back exactly the access this sandbox exists to remove.
+// Dropping the loader also fixed a bug it had started causing. It moved its widget host to
+// www.tradingview-widget.com, which our frame-src does not allow, so the browser blocked the
+// frame; the loader then caught its own CSP violation and silently retried on s.tradingview.com
+// with NO config applied. That falls back to their defaults — colorTheme "light" and
+// isTransparent false — which painted a white box with pale-grey text inside our dark panel.
+// Building the URL ourselves means nothing between us and the widget can drop the theme.
 //
-// Note the srcdoc frame also inherits our CSP, which is why the <meta> policy lists
-// s3.tradingview.com under script-src and TradingView's frame origins under frame-src.
+// NEVER add allow-same-origin here. The frame is cross-origin now, but allow-same-origin on a
+// sandboxed frame is how you hand third-party code back the access this sandbox exists to remove.
+// The flags below are exactly the ones the widget already ran under as a nested frame, so it is
+// known to tolerate an opaque origin.
+//
+// Our CSP no longer reaches inside: this is a network-scheme navigation, so the frame carries
+// TradingView's own policy rather than inheriting ours. All ours decides is whether we may frame
+// it at all, which is the single frame-src entry in the <meta> policy.
+const TV_EMBED="https://www.tradingview.com/embed-widget/events/?locale=en#";
 const tvColorTheme=()=>state.theme==="latte"?"light":"dark";
 let tvTheme=null;   // polarity of the frame on screen; null until one is injected
 function ensureTradingViewWidget(){
@@ -3041,16 +3090,23 @@ function ensureTradingViewWidget(){
   // Drop the previous frame, if any. Clearing children leaves #tvBox's inline --live-cal-h
   // alone, so the user's saved height survives the rebuild.
   box.textContent="";
+  // locale is a query param, not part of the fragment config — it's baked into TV_EMBED and
+  // mirrors propertiesToSkipInHash from TradingView's own loader.
   const cfg=JSON.stringify({
     colorTheme:want,
-    isTransparent:true,width:"100%",height:"100%",locale:"en",
+    isTransparent:true,width:"100%",height:"100%",
     importanceFilter:"-1,0,1",countryFilter:"us"
   });
   // A placeholder under the frame. The box is 500px tall by default and the frame paints only
-  // once TradingView's async script lands — so a slow network showed a 500px void, and a blocked
-  // one showed it forever with no explanation. The frame is opaque and cross-origin, so we cannot
-  // detect its success; instead the note sits BEHIND the frame and is simply covered when the
-  // widget paints over it. No timer, nothing to get wrong.
+  // once the cross-origin document loads — so a slow network showed a 500px void, and a blocked
+  // one showed it forever with no explanation.
+  //
+  // It is REMOVED on the frame's load event, not left to be painted over. Being "covered" was
+  // never actually working: it only looked that way because the frame was wrongly painting an
+  // opaque white canvas (see the #tvFrame color-scheme comment). Now that the frame composites
+  // transparently the note would show straight through the widget, so it has to go. load fires
+  // on a cross-origin sandboxed frame — we still cannot read INTO it, but we do learn it
+  // arrived, which is all this needs. If it never loads, the note stays and says why.
   const ph=document.createElement("div");
   ph.className="tv-ph";
   ph.innerHTML="Loading the live calendar from TradingView\u2026<br><span>This is the only panel that "+
@@ -3063,38 +3119,24 @@ function ensureTradingViewWidget(){
   frame.title="Live economic calendar";
   frame.setAttribute("sandbox","allow-scripts allow-popups allow-popups-to-escape-sandbox");
   frame.setAttribute("referrerpolicy","no-referrer");
-  // Raw markup, not esc()'d: setAttribute stores the value verbatim and the browser parses
-  // srcdoc as HTML, so escaping here would render the document as literal text. cfg is safe to
-  // inline — it is built from allowlisted values, not user input.
-  //
-  // The script tag is assembled as "<"+"script" rather than written literally. Two reasons: a
-  // literal `</script` would close THIS block during HTML parsing, and editors that lint
-  // embedded HTML/CSS otherwise treat these strings as real tags and light the file up with
-  // phantom errors. Layout uses style attributes for the same reason — no inner style element.
-  // (Don't write those tag names literally anywhere here, comments included: an editor's HTML
-  // scanner ignores JS comment context and will open a CSS region it never closes.)
-  const TV_SRC="https://s3.tradingview.com/external-embedding/embed-widget-events.js";
-  frame.setAttribute("srcdoc",[
-    '<!doctype html><html style="height:100%"><head><meta charset="utf-8"></head>',
-    '<body style="margin:0;height:100%;background:transparent;overflow:hidden">',
-    '<div class="tradingview-widget-container" style="height:100%">',
-    '<div class="tradingview-widget-container__widget"></div>',
-    '<'+'script src="'+TV_SRC+'" async>', cfg, '</'+'script>',
-    '</div></body></html>'
-  ].join(""));
+  // The config is the URL fragment TradingView's own loader would have built: a JSON blob,
+  // percent-encoded, after a bare #. encodeURIComponent is enough — cfg is built from
+  // allowlisted values, not user input, so there's no HTML to escape here.
+  frame.src=TV_EMBED+encodeURIComponent(cfg);
+  // once:true so a reparent-triggered reload (applyCalendarOrder moving the panel) doesn't
+  // re-run it; remove() on an already-detached node would be harmless anyway.
+  frame.addEventListener("load",()=>ph.remove(),{once:true});
   box.appendChild(frame);
 }
 /* Expected console noise on this tab, recorded so it is not re-investigated every six months.
-   TradingView's widget loads a NESTED frame of its own from www.tradingview-widget.com (an
-   analytics/"sheriff" endpoint). Our frame-src allows s.tradingview.com, which is the widget
-   itself, and does not allow that one — so the browser logs a red CSP violation on every visit
-   to this tab while the calendar itself loads and renders real data perfectly.
+   Now that the frame is pointed straight at TradingView's embed URL instead of running their
+   loader script, the old www.tradingview-widget.com "sheriff" frame-src violation is gone — that
+   nested frame is created by the embed document itself, under its own CSP, not ours.
 
-   That is the policy working, not a defect: verified in Chrome that the events frame loads and
-   shows the current day's releases with the nested frame refused. Do NOT widen frame-src to
-   silence it. Firefox and WebKit report the same thing in their own words, and on file:// you
-   will also see opaque-origin, null-origin CORS, LockManager and cookie-access errors from
-   inside the sandbox — all of which are the sandbox doing its job. */
+   What's still expected: on file:// you will see opaque-origin, null-origin CORS, LockManager
+   and cookie-access errors logged from inside the sandbox. That is the sandbox doing its job —
+   verified in Chrome that the events frame still loads and shows the current day's releases
+   regardless. Firefox and WebKit report the same thing in their own words. */
 // The live calendar sizes itself from saved state only — deliberately never from the
 // Personal panel, so editing or deleting events there can't move it.
 // Sole writer of the live-calendar height. Sets --live-cal-h rather than style.height,

@@ -30,8 +30,10 @@ worth sending if you can show the mitigation fails, but the reasoning is documen
 - **Loopback is allowed on any port** so the optional local assistant can reach Ollama. This is
   unroutable off the machine but does widen what injected script could reach on it. The tradeoff is
   written up in `PROJECT_STATUS.md`.
-- **The TradingView widget is sandboxed** without `allow-same-origin`, giving it an opaque origin so
-  it cannot read stored data or touch the page.
+- **The TradingView calendar runs no third-party script.** It's a sandboxed iframe pointed
+  directly at TradingView's own embed URL, without `allow-same-origin`, giving it an opaque origin
+  so it cannot read stored data or touch the page — there's no loader script to sandbox in the
+  first place.
 - **Imported backups are untrusted input.** Every field is whitelisted and coerced by
   `sanitizeState()`, row ids are regenerated, and nothing is persisted until it renders cleanly.
 - **`connect-src` is not the only channel, and never was.** `img-src` allows `data:` and `https:`,

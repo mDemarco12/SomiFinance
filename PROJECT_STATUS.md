@@ -9,7 +9,7 @@
 ## Snapshot
 
 - **What it is:** a single-file, offline-first personal net-worth & macro dashboard. Vanilla HTML/CSS/JS, no bundler, no backend. Persists to `localStorage`. There is one build step, and it is not a compiler: `build.py` projects the source into the other two builds (see **Three builds** below). Every output is still a standalone single file that runs by double-clicking it.
-- **Genuinely offline on load.** Chart.js v4.4.1 is **inlined** into the file (~205 KB minified, 13 lines, MIT banner preserved and `@kurkle/color`'s alongside it, `sourceMappingURL` stripped). **Never dump those lines** — they will swamp a context window. Find them by LENGTH rather than by line number, which moves with every edit: `awk 'length($0)>2000 {print NR}'` prints exactly the two that matter, and `awk 'length($0)<2000'` filters them out of any grep — no CDN tag, and the page's own two script blocks are both inline. Opening the page fires **zero** network requests **by default** (auto-refresh ships `off` — see Macro Signals). Only three things ever reach out, all user-triggered: the TradingView widget on first Economic Calendar view, the Treasury/BLS fetches on Refresh from Macro Signals, and the FX-rate fetch when a non-USD currency is selected. The single remaining third-party `script src` is TradingView's, and it lives inside the sandboxed frame's `srcdoc`, never in this document — see **Security posture**. Don't "optimize" Chart.js back to a CDN — inlining is deliberate (it also removes an unpinned-CDN supply-chain path, since the old tag had no SRI hash).
+- **Genuinely offline on load.** Chart.js v4.4.1 is **inlined** into the file (~205 KB minified, 13 lines, MIT banner preserved and `@kurkle/color`'s alongside it, `sourceMappingURL` stripped). **Never dump those lines** — they will swamp a context window. Find them by LENGTH rather than by line number, which moves with every edit: `awk 'length($0)>2000 {print NR}'` prints exactly the two that matter, and `awk 'length($0)<2000'` filters them out of any grep — no CDN tag, and the page's own two script blocks are both inline. Opening the page fires **zero** network requests **by default** (auto-refresh ships `off` — see Macro Signals). Only three things ever reach out, all user-triggered: the TradingView widget on first Economic Calendar view, the Treasury/BLS fetches on Refresh from Macro Signals, and the FX-rate fetch when a non-USD currency is selected. `script-src` runs no third-party script at all — the TradingView calendar is a sandboxed frame pointed directly at TradingView's own embed URL, never a loader executing in this document — see **Security posture**. Don't "optimize" Chart.js back to a CDN — inlining is deliberate (it also removes an unpinned-CDN supply-chain path, since the old tag had no SRI hash).
 - **File:** `SomiFinanceDemo.html` (~5627 lines / ~528 KB, one file — markup, styles, and script all inline; ~200 KB of that is the inlined Chart.js, so hand-written code is ~255 KB). The quarterly archive added ~550 lines.
 - **Three builds, one source.** `SomiFinanceDemo.html` is the **only file anyone edits**. `build.py` projects it into the other two. Never hand-edit a generated file — it carries a DO-NOT-EDIT banner and the next build silently overwrites it.
 
@@ -103,29 +103,78 @@ Both exist because the connection UI was originally split across two surfaces an
   that mutate connection state — both the panel and the ⚙ section call them rather than carrying
   their own copies.
 
-### The TradingView widget is sandboxed — never add `allow-same-origin`
+### The TradingView widget runs no third-party script — never add `allow-same-origin`
 
-`ensureTradingViewWidget()` puts the third-party loader inside a `srcdoc` iframe with
-`sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox"`. Omitting `allow-same-origin`
-is the entire mitigation: it gives the frame an **opaque origin**, so TradingView's unpinned,
-unhashable script cannot read `localStorage["somifinance.v1"]` (every holding, value and note) or
-touch this document. Appended directly to `#tvBox` — as it was originally — it had all of that.
+`ensureTradingViewWidget()` points a sandboxed iframe straight at TradingView's embed URL —
+`https://www.tradingview.com/embed-widget/events/?locale=en#<config>`, config as a percent-encoded
+JSON fragment — with `sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox"` and no
+`allow-same-origin`. It used to run TradingView's own loader script
+(`embed-widget-events.js`) inside a `srcdoc` frame instead; that loader is gone.
 
-**Adding `allow-same-origin` to a srcdoc frame makes it inherit *this* document's origin**, handing
-back exactly the access the sandbox removes. Don't, even if the widget misbehaves. If it degrades
-under the opaque origin, the fallback is to drop the loader entirely and point the iframe at
-TradingView's embed URL directly (`https://www.tradingview.com/embed-widget/events/?locale=en#<config>`),
-which removes third-party script execution altogether and needs only a `frame-src` entry.
+Two reasons it's gone, not just sandboxed differently. First, security: a `srcdoc` frame inherits
+this document's origin unless `allow-same-origin` is withheld, so hosting unpinned, unhashable
+third-party script there depended entirely on that one flag never being added — omitting it is
+still no `allow-same-origin`, ever, same as before, but there is no longer a loader script to
+mitigate in the first place. Second, and what actually forced the change: TradingView's loader
+started building its widget frame on `www.tradingview-widget.com`, a host our `frame-src` doesn't
+allow. The loader caught its own CSP violation and silently retried on `s.tradingview.com` — but
+with **no config applied**, falling back to their defaults (`colorTheme:"light"`,
+`isTransparent:false`), and it was invisible in the console because the loader's fallback swallowed
+the failure. Building the frame's `src` ourselves removes the loader, and with it any code path
+that can silently drop the theme.
 
-A srcdoc frame **inherits the parent CSP**, which is why `script-src` lists `s3.tradingview.com` and
-`frame-src` lists TradingView's frame origins. Consequence: if their loader ever starts writing
-inline script, our hash-only `script-src` will block it — that is the expected failure mode, not a
-bug to fix by loosening the policy.
+That config loss was real and worth fixing, but note what it was *not*: it was **not** the cause of
+the white box everyone kept reporting. See the `color-scheme` note below before assuming otherwise
+— fixing the loader did not change the white box at all.
 
-Because the widget now lives in a frame, TradingView's `height:100%` clobber lands on a div inside
-*its* document, not on `#tvBox`. The `#tvBox{…!important}` rule is therefore belt-and-braces now
-rather than load-bearing — but keep it, and keep `setLiveCalPx()` as the sole writer of
-`--live-cal-h`. Never set `tvBox.style.height` directly.
+`script-src` no longer lists a TradingView host — we execute none of their script anywhere in this
+document. `frame-src` lists only `www.tradingview.com`; `s.tradingview.com` is no longer used. The
+frame is a network-scheme navigation to TradingView's own page, so it carries **their** CSP, not
+ours — ours only decides whether we're allowed to frame it. If TradingView's embed page ever starts
+requiring something incompatible with the sandbox flags above, the fix is a sandbox flag, not
+`allow-same-origin`.
+
+#### `#tvFrame{color-scheme:light}` is what stops the widget painting white — never remove it
+
+This is the third time "the live calendar is a white box with unreadable text" has been filed, and
+the first two fixes were aimed at the wrong thing. Record straight so it isn't re-litigated:
+
+- **The loader removal above did not cause the white box, and did not fix it.** TradingView's
+  loader silently dropping our config was a separate, real bug, worth fixing on its own.
+- **The white box was always a `color-scheme` mismatch.** `applyTheme()` sets
+  `root.style.colorScheme` so the browser's own scrollbars, caret and date pickers follow the
+  theme. `color-scheme` **inherits**, so under any dark theme `#tvFrame` resolved to `dark`.
+  TradingView's embed document declares no `color-scheme` at all — not in its HTML, not in any of
+  the 25 CSS bundles it loads — so it resolves to light. **Chrome will not composite an iframe
+  transparently when the embedder and the embedded document disagree**: it paints an opaque canvas
+  from the *embedded* document's scheme, which is white. `isTransparent:true` was working the whole
+  time — `.tv-embed-widget-wrapper__body` really was `rgba(0,0,0,0)` — it was just revealing that
+  white canvas instead of `--panel`, with TradingView's *dark* text tokens (`#dbdbdb` / `#8c8c8c`)
+  sitting on top of it. That mismatch is the entire bug.
+
+Pinning the frame to `light` makes the two agree, so the canvas stays transparent and the panel
+shows through. A static value is correct for both polarities: TradingView's declared scheme does
+not change with `colorTheme`, and under Latte the root is already `light`.
+
+Do not "fix" a future recurrence by reaching for `isTransparent:false`. That makes TradingView
+paint its own `#1f1f1f`, which can never be white but also never matches `--panel` — a visibly
+lighter inset rectangle instead of one continuous surface.
+
+The diagnostic that settles this in seconds, with the calendar open: read
+`getComputedStyle(document.getElementById('tvFrame')).colorScheme`. If it is anything but `light`,
+that is the bug. Note that the DOM *inside* the frame looks perfectly correct while this is broken
+(`<html class="theme-dark is-transparent">`, transparent computed backgrounds), so inspecting the
+frame's own document will tell you everything is fine. Trust the rendered pixels over that.
+
+Related: `.tv-ph` is removed on the frame's `load` event rather than being painted over. Relying on
+it being covered only ever worked because of the white canvas; with a genuinely transparent frame
+the placeholder bleeds through the widget.
+
+TradingView's `height:100%` clobber, when it happened, landed on a div inside *its* document, not
+on `#tvBox` — true again now, for the same reason (the widget's own container never was `#tvBox`
+once it moved into a frame). The `#tvBox{…!important}` rule stays belt-and-braces rather than
+load-bearing; keep it, and keep `setLiveCalPx()` as the sole writer of `--live-cal-h`. Never set
+`tvBox.style.height` directly.
 
 ### The quarterly archive — an audit record, not a backup; the passphrase is the only secret
 
@@ -264,12 +313,12 @@ so a same-morning refresh legitimately returns the prior business day.
 **Economic Calendar tab**
 - Two panels, `data-panel="personal"` and `data-panel="live"`: the editable **Personal economic calendar** and the read-only **Live economic calendar**.
 - Editable dated events, importance tags (High/Med/Low/Personal), auto-sorts by date, past events greyed out (`renderCalendar()`)
-- **Live reference widget**: a second panel embeds TradingView's official Economic Calendar widget (`embed-widget-events.js`, US-filtered) (`#tvBox`) — read-only, not saved to `state`, sits alongside the editable table rather than replacing it.
+- **Live reference widget**: a second panel embeds TradingView's official Economic Calendar via a sandboxed iframe pointed directly at their embed URL (US-filtered) (`#tvBox`) — read-only, not saved to `state`, sits alongside the editable table rather than replacing it. No TradingView script runs in this document; see **Security posture**.
 - **The live panel is user-resizable** via a hollow-triangle corner grip (`#tvResize`, `initLiveCalResize()`), persisted in `state.liveCalHeight` (clamped 260–1600 by `clampLiveCal()`). Uses **pointer events with `setPointerCapture`**, not mouse events — the cross-origin TradingView iframe swallows `mousemove` the instant the cursor crosses into it mid-drag. Arrow keys on the focused grip nudge ±20 (±60 with Shift).
-- **`#tvBox` height is pinned by an `!important` rule reading `--live-cal-h`, and `setLiveCalPx()` is the only writer.** This is load-bearing and non-obvious: the TradingView embed script writes a plain `height:100%` onto its own container (which *is* `#tvBox`) a few ms after the async script lands, silently clobbering the saved height and collapsing the box to ~150px. A normal author `!important` beats TradingView's non-important inline style. Consequence: **never set `tvBox.style.height` directly** — the `!important` rule would ignore it and the drag would appear frozen. Confirmed via MutationObserver; TradingView does not use `!important` itself.
+- **`#tvBox` height is pinned by an `!important` rule reading `--live-cal-h`, and `setLiveCalPx()` is the only writer.** Originally load-bearing because TradingView's loader script wrote a plain `height:100%` onto its own container (which *was* `#tvBox` at the time) and silently clobbered the saved height. Now belt-and-braces: the widget's container lives inside the iframe's own document, so any clobber lands there, not on `#tvBox`. Consequence unchanged: **never set `tvBox.style.height` directly** — the `!important` rule would ignore it and the drag would appear frozen.
 - **The live panel no longer auto-sizes to the personal panel.** A previous `syncCalendarWidgetHeight()` measured the personal panel and forced `#tvBox` to match, so deleting a row there shrank the live feed. Deleted deliberately — `applyLiveCalHeight()` reads saved state only and never touches the personal panel. Don't reintroduce a coupling here.
-- **The widget is lazy-loaded** by `ensureTradingViewWidget()` on first Calendar render — it is deliberately NOT a `<script>` in the markup, because that fired on every page load even for users who never opened the tab.
-- **It re-themes on a light/dark flip.** The guard is `tvTheme`, a sentinel holding the polarity currently on screen, not a plain loaded-once boolean (`tvColorTheme()` maps Latte → light, everything else → dark). `colorTheme` is baked into the widget config at injection and the opaque-origin frame is unreachable from our CSS, so rebuilding the frame is the only lever. Without it a widget first shown under a dark theme kept TradingView's pale-grey text after a switch to Latte and washed out completely against the light panel. **Dark→dark switches and ordinary re-renders still bail out** and never re-ping TradingView — only a polarity flip rebuilds. Clearing `#tvBox` leaves its inline `--live-cal-h` alone, so the user's saved height survives.
+- **The widget is lazy-loaded** by `ensureTradingViewWidget()` on first Calendar render — it is deliberately NOT built into the markup, because that fired on every page load even for users who never opened the tab.
+- **It re-themes on a light/dark flip.** The guard is `tvTheme`, a sentinel holding the polarity currently on screen, not a plain loaded-once boolean (`tvColorTheme()` maps Latte → light, everything else → dark). `colorTheme` is baked into the frame's `src` at injection and the opaque-origin frame is unreachable from our CSS, so rebuilding the frame is the only lever. Without it a widget first shown under a dark theme kept TradingView's pale-grey text after a switch to Latte and washed out completely against the light panel. **Dark→dark switches and ordinary re-renders still bail out** and never re-ping TradingView — only a polarity flip rebuilds. Clearing `#tvBox` leaves its inline `--live-cal-h` alone, so the user's saved height survives.
 - **`applyCalendarOrder()` early-returns when the DOM order already matches.** This is load-bearing, not a micro-optimization: `appendChild` on an existing child re-inserts it, and re-parenting an `<iframe>` makes the browser reload it. Without the guard the widget reloaded (and re-pinged TradingView) on *every* calendar render. An actual drag/click reorder still reloads it — unavoidable when moving a node in the DOM. Chosen after Bloomberg's and investing.com's calendar pages both returned HTTP 403 (confirmed active anti-bot blocking, and both prohibit scraping in their ToS) — TradingView's widget is an official no-key embed built for exactly this. Finnhub and Financial Modeling Prep were also confirmed CORS-open alternatives if structured (not embedded) calendar data is wanted later, but both need a free API key/signup; not pursued since the no-key widget covered the ask.
 
 **About tab** (shortcut `6`, last in the nav)
@@ -488,7 +537,8 @@ grouped by what they protect:
 - **Tab-scoped Refresh button**: behavior now branches on the active tab (refreshBtn handler inside `init()`) — Overview still snapshots net worth into history (unchanged); Macro Signals pulls live data (see above); Ledger/Calendar just re-render with a light toast. Previously Refresh always snapshotted + jumped to Overview regardless of tab; changed because a full page reload (F5) covers the "everything" case and the button reads clearer scoped to what's on screen. The stale-data banner copy was updated to match (now explicitly says update in Ledger, then hit Refresh on **Overview**).
 - Stale-data nudge banner (fires after 7 days since last update, or if no snapshots exist) (`maybeBanner()`), with a third branch for an empty ledger — "confirm today's values" is wrong copy when there are no values yet
 - Keyboard shortcuts (1-6 switch tabs, Esc closes menus). Order: Overview, Ledger, Budgeting, Macro, Calendar, About. Budgeting was inserted at 3 (shifting Macro 3→4, Calendar 4→5); About was appended at 6 specifically to avoid shifting anything again. **Adding a tab means editing five places in lockstep** — the menu `<button>`, the `<section id="tab-…">`, `REFRESH_TITLE`, the keydown array, and `CHROME_MAP` plus the three `LANGS` dicts.
-- **Numeric table headers are LEFT-aligned while the figures stay right-aligned** (`thead th.num{text-align:right}` was deleted; `.cell.num` / `tfoot td.num` / `.sec-head td.num` keep the numbers right). Recorded as a decision so it isn't "fixed" back: right-aligning a numeric header pins it to its column's right edge, landing it within one `th`'s padding (~20px, whatever the column widths are) of the next left-aligned header — Budget's LIMIT and TYPE read as one jammed pair. **No column-width change can widen that gap**; only the alignment can.
+- **Numeric table headers are RIGHT-aligned, over their figures** (`thead th.num{text-align:right}`, alongside `.cell.num` / `tfoot td.num` / `.sec-head td.num` / `.arch-wrap td.num` on the numbers). This reverses an earlier decision that went the other way, so read the trade-off before flipping it a third time. Right-aligning does have the cost that was originally recorded: a numeric header pins to its column's right edge and so lands within one `th`'s padding (~20px) of the next left-aligned header, leaving Budget's LIMIT close to TYPE. **That gap is `padding-right` + `padding-left` of the two `th`s, not a function of column widths, so no width change can widen it.** Accepted anyway on review — a header floating a column-width from the figures it labels is the worse of the two. Two things keep this coherent: only right-aligned columns carry `.num` (Budget's TYPE deliberately does not, since its values are left-aligned `<select>`s), and the `th`'s 10px `padding-right` equals the figures' effective right inset (`tbody td{padding:2px}` + `.cell{padding:8px}`) — that equality is the only reason label and number share an edge, so don't adjust either padding alone.
+- **The quarterly archive's figures are right-aligned too** (`.arch-wrap td.num`), added with the above. They had no alignment rule at all and rendered left while every other money table ran right; the cells were already `num tnum`, so right was always the intent. Keyed on `.num` not `.tnum` — the "Archived on" timestamp is `.tnum` only and stays left.
 - Chart helpers: `mountChart(id,type,...)` is the shared guard/destroy core; `line()` and `bars()` are thin wrappers over it (`mountChart()`). Use `bars()` for any new bar chart rather than hand-rolling a `new Chart(...)`.
 - Watermark footer: "SomiFinance ©2026 mDemarco12" (`.watermark`)
 - Responsive layout — fluid shell and type (see *Fluid sizing* under Done); the panel grid still collapses to 1 column under 840px
