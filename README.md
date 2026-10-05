@@ -101,6 +101,7 @@ Chart.js is bundled directly into the file rather than loaded from a CDN, so **o
 | TradingView | First time you open the Economic Calendar tab | The live calendar widget |
 | U.S. Treasury + BLS | Refresh on Macro Signals (or on load, if you turn auto-refresh on) | Latest yields and CPI |
 | open.er-api.com | Only when a non-USD currency is selected | Exchange rates |
+| Yahoo Finance, via `quotes.py` on your own machine | **Off by default.** Only after you turn on ⚙ → Stock quotes, and then when you press Refresh on Assets & Liabilities | Stock name and last price. Only your ticker symbols are sent — never share counts, values or notes |
 | Your own machine (`127.0.0.1`/`localhost`) | When you open the ✦ assistant panel (one quick check that Ollama is reachable) and when you send it a message | Local Ollama chat — never leaves your computer |
 
 The quarterly archive makes no network requests at all: it's encrypted in your browser with its built-in Web Crypto, and the file goes wherever you save it. The passphrase is never stored — not in the file, not in the browser.

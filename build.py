@@ -65,6 +65,11 @@ BANNER = (
 STRUCTURAL_LEAKS = [
     (re.compile(r"\d+\s*sh\s*[×x]\s*\$"), "a share-count note (count, 'sh', then a price)"),
     (re.compile(r"\bLong\s+\d+\s+contracts?\b"), "an options position note"),
+    # Stock quotes gave asset rows a symbol field. A tracked build seeds none — the demo stays
+    # symbol-free and the end-user build is empty — so ANY filled one is real data on its way out.
+    # Matched by shape rather than by harvesting the symbols themselves: plenty of them are also
+    # ordinary capitalised words, and a word-list match would fire on the source's own comments.
+    (re.compile(r"\bticker:\s*\"[^\"]+\""), "a seeded row with its symbol field filled in"),
 ]
 
 _secret_re = None
@@ -290,6 +295,7 @@ function seed(){
     autoRefresh:"off",   // off | stale | always — default off keeps page load request-free
     lastFetch:"",        // YYYY-MM-DD of the last fully successful macro fetch
     archive:{lastQuarter:"",lastAt:"",salt:"",head:"",count:0},   // nudge + truncation anchor only
+    quotes:{enabled:false,endpoint:"http://127.0.0.1:8765",lastFetch:""},   // Yahoo quotes — opt-in, see quotesOn()
     assets:%s,
     liabilities:%s,
     history:[],

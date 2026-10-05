@@ -2,7 +2,7 @@
 
 > **Maintenance rule:** this doc is scanned by agents working on this project. Track it with `Scan count` below — increment it by 1 every time this doc is read for context. **On every 4th scan** (count reaches a multiple of 4), lint the whole doc against the current state of `SomiFinanceDemo.html` before doing anything else: move shipped items out of "Could be done," delete resolved "Needs polish" / "Rebrand to-do" items, add anything newly true. Don't let this drift from the actual code.
 >
-> **Scan count:** 8 (pre-launch polish pass — 46 items in six commits, linted against the code on this scan per the rule above; see **Pre-launch polish** under Done; previously: GTM hardening pass — three-reviewer audit, 25 fixes, full-app QA suite; see **GTM hardening** under Done; previously: quarterly archive — encrypted append-only audit record, see **Security posture** and **Done**; previously: full doc lint against the code — goal-aware categories, reset, name colour, fluid sizing, TradingView re-theme fix; previously: three-build split — `build.py`, per-build storage keys, empty-ledger end-user build; previously: security pass — CSP, sandboxed TradingView frame, `sanitizeState()`, genericized seed, history purge; see **Security posture** below)
+> **Scan count:** 9 (stock quotes — opt-in Yahoo Finance prices through a loopback helper, see **Stock quotes** under Security posture and Done; previously: pre-launch polish pass — 46 items in six commits, linted against the code on this scan per the rule above; see **Pre-launch polish** under Done; previously: GTM hardening pass — three-reviewer audit, 25 fixes, full-app QA suite; see **GTM hardening** under Done; previously: quarterly archive — encrypted append-only audit record, see **Security posture** and **Done**; previously: full doc lint against the code — goal-aware categories, reset, name colour, fluid sizing, TradingView re-theme fix; previously: three-build split — `build.py`, per-build storage keys, empty-ledger end-user build; previously: security pass — CSP, sandboxed TradingView frame, `sanitizeState()`, genericized seed, history purge; see **Security posture** below)
 >
 > **Anchor style:** reference code by **symbol name** (`renderBudget()`, `#tvBox`, `THEMES`) — never by line number. A previous version used `file#L123` links and all 26 went stale the moment Chart.js was inlined. Symbol names stay greppable across edits.
 
@@ -214,6 +214,42 @@ it didn't carry. Every archived string renders outside `cellInput()`, so every o
 `showArchiveDialog()`'s Escape handler is named `onEsc`, not `esc`: `showResetConfirm()`'s is
 called `esc`, which shadows the global escaper for that whole function body.
 
+### Stock quotes — opt-in, symbols only, through a loopback helper
+
+⚙ → **Stock quotes** lets an asset row carry a `ticker` and `shares` and pulls the stock name and
+last price from Yahoo Finance. Five things here are load-bearing:
+
+- **The page never talks to Yahoo.** Yahoo's endpoints are not CORS-open (see Key facts), so
+  `quotes.py` — standard library only, tracked in the repo — runs on the user's machine, asks
+  Yahoo, and answers on `127.0.0.1:8765`. `connect-src` already allowed loopback for the
+  assistant, so **no remote host was added to the CSP**. Don't "simplify" this to a public CORS
+  proxy: a third party would then see the holdings list.
+- **Only ticker symbols leave the machine.** `fetchQuotes()` sends the symbol list and nothing
+  else; value is computed locally as `shares × price` and written into the row's existing `value`,
+  which is why no total, chart, goal, snapshot or archive code changed. The helper logs that a
+  request happened, never which symbols.
+- **Off by default, and consent can't arrive in a file.** `state.quotes.enabled` is `false` in
+  every build. `setQuotesEnabled()` is its only writer besides `sanitizeState()`, and the only
+  route to `true` is `showQuotesConsent()`, shown on every off→on with no stored "already agreed"
+  flag. `importJSON()` forces it back to `false` and says so in its toast.
+- **The gate is at the action.** `quotesOn()` is re-checked inside `fetchQuotes()` and
+  `refreshQuotes()`, and again after each `await` — same lesson as `loadExampleData()`. With the
+  feature off the Ticker/Shares/Price columns are hidden by CSS (`#assetTable:not(.quotes-on)
+  .q-col`), every Value cell is editable, and stored tickers/shares are kept, not deleted.
+- **The helper address has the assistant's second lock.** `state.quotes.endpoint` is user- and
+  import-editable, so it is regexed through `CHAT_LOOPBACK` in `sanitizeState()`,
+  `normalizeAddons()`, the ⚙ input and `fetchQuotes()`. `quotes.py` in turn serves one path,
+  validates symbols against the page's own `TICKER_RE`, caps them at 50, rejects a non-loopback
+  `Host`, and sends a CORS header only to `null`/loopback origins — it is not a proxy.
+
+Fetched fields are coerced exactly like an import (`sTicker`/`sNumN`/`sStr`/`sDateN`) before they
+touch state. A fetched name fills `name` only when the user left it blank. Non-USD listings are
+converted with `state.fx.rates` (`quoteToUSD()`, including London's pence `GBp`); a currency
+outside `CURRENCIES` leaves the row untouched and is reported. `build.py`'s `STRUCTURAL_LEAKS`
+aborts any tracked build that seeds a row with its symbol field filled in, so the demo stays
+symbol-free. Yahoo has no official API — if prices stop arriving, `fetch_one()` in `quotes.py` is
+the one place to fix.
+
 ### `sanitizeState()` is the only door into `state`
 
 Called by **both** `load()` and `importJSON()`. It builds a fresh state by **explicit field copy from
@@ -294,6 +330,7 @@ so a same-morning refresh legitimately returns the prior business day.
 - Inline-editable tables — click any cell, category dropdown, notes field (`renderLedger()` / `rowHTML()` / `wireCells()`)
 - Asset categories come from the active goal's `CAT_SETS` entry (personal: 13, including a catch-all **"Alternative Asset"**; business: 10) — there's no in-app category management (add/rename) anymore; to track something odd (a wine cellar, a pet, a jean collection), add an asset in the Ledger, name the asset itself whatever you want, and assign it the "Alternative Asset" category. It then appears in the Overview allocation automatically since that panel groups by whatever category real assets carry, not by a separate managed list.
 - Add/delete rows, live-updating totals and net worth strip
+- **Optional stock positions** (off by default): with ⚙ → Stock quotes on, the assets table gains Ticker, Shares and a read-only Price column, and Refresh on this tab pulls prices (`refreshQuotes()`). A row with ticker + shares + price has a computed, read-only Value (`valueDerived()`); `syncQuoteCells()` repaints one row in place so tabbing between cells keeps focus. Share counts go through `parseShares()`, never `fromDisplay()` — they are not money and must not be FX-converted. See **Stock quotes** under Security posture.
 - **Empty state on the assets table** mirroring the liabilities one — `renderLedger()` used to map an empty array into bare table headers. Also covers a user who deletes their last row.
 
 **Budgeting tab** (shortcut `3`, between Ledger and Macro)
@@ -440,7 +477,7 @@ grouped by what they protect:
   keyboard/undo 60, first-run 26, example data 19, stale gate 16, per-theme contrast 10 — plus a
   personal-build check (13) and a narrow-width overflow check that asserts zero horizontal page
   overflow at 360 and 390px. Lint clean: no unresolved ids, no dead functions, no `console.log`,
-  i18n dicts in sync at 71 keys each. The archive's rejection paths were re-verified independently
+  i18n dicts in sync at 71 keys each (74 since stock quotes added three column labels). The archive's rejection paths were re-verified independently
   by **mutation testing** (deleting the KDF bounds check and confirming the suite fails), because
   a toast-helper change had made three archive tests pass again and that needed to be proven not
   to be masking.
@@ -497,7 +534,7 @@ grouped by what they protect:
 - FX fetch is **deliberately not gated by `state.autoRefresh`** — unlike opt-in Treasury/CPI data, currency is an explicit user selection, and a missing rate would silently mislabel USD figures as ¥/€. It fetches once a day whenever a non-USD currency is active, falls back to the last cached rate, and marks the picker `(rate unavailable — shown in USD)` when no rate exists for the selected currency — figures then stay in USD (`fxRateKnown()`) rather than showing USD numbers under a foreign symbol.
 
 **Settings menu (⚙)**
-- Eight collapsible sections (`.set-sec` / `.set-head` / `.set-body`): Theme, Auto-refresh, 語 Language, € Currency, ◎ Tracking, ✎ Your name, ✦ Assistant, ⧉ Quarterly archive — plus **◷ Replay the intro hints**, a conditional **◆ Load example data** (shown only while `isFreshInstall()`), and a **Reset all data** button below them. The reset is deliberately *not* a `.set-sec`: `openSetSection()` treats every `.set-head` as an accordion panel, and a one-shot destructive action is not a picker. **Accordion — one open at a time** (`openSetSection()`), all collapsed on every open, with the active value shown in each collapsed header (`setSectionCurrent()`). Wired once by `initSettingsSections()`.
+- Nine collapsible sections (`.set-sec` / `.set-head` / `.set-body`): Theme, Auto-refresh, Stock quotes, 語 Language, € Currency, ◎ Tracking, ✎ Your name, ✦ Assistant, ⧉ Quarterly archive — plus **◷ Replay the intro hints**, a conditional **◆ Load example data** (shown only while `isFreshInstall()`), and a **Reset all data** button below them. The reset is deliberately *not* a `.set-sec`: `openSetSection()` treats every `.set-head` as an accordion panel, and a one-shot destructive action is not a picker. **Accordion — one open at a time** (`openSetSection()`), all collapsed on every open, with the active value shown in each collapsed header (`setSectionCurrent()`). Wired once by `initSettingsSections()`.
 - `.theme-list` has `max-height` + `overflow-y:auto` + **`overscroll-behavior:contain`** — that last property is what stops scrolling the menu from chaining to the page behind it.
 - **User-resizable, and the contents scale with it.** A corner grip (`#setMenuResize`, bottom-left, mirroring `#tvResize`'s conventions — pointer events + `setPointerCapture`, arrow-key nudging, drag saves once on release while a keypress saves immediately) drives `state.setMenuScale` (clamped `0.85`–`1.6` by `clampSetScale()`, default `1`). `applySetMenuScale()` is the sole writer of `--set-scale` on `#themeList`. **Every fixed-px size inside the menu is `calc(basePx * var(--set-scale,1))`** — font-sizes, paddings, gaps, the theme swatch icons, even the one existing fluid-token exception (`.set-danger button`'s `var(--l-micro)`) — so scale 1 is pixel-identical to before this feature and every other value moves in lockstep with it. **Deliberately NOT scaled:** border-width, border-radius and box-shadow (decoration, not legibility). `max-height` is `min(70vh,calc(520px * var(--set-scale,1)))` — the 520px term scales so a bigger menu is actually taller, while the `70vh` term is what still keeps it on screen. It was a flat `520px` at first, which meant the box stopped growing at ~15% up while its rows kept inflating: you got a scrollbar and stretched-looking rows instead of a bigger menu.
 - **Each drag axis is normalised by its own base dimension** (`initSetMenuResize()`). Both axes originally divided the pointer delta by `250` — the base *width* — but the menu is ~1.8x taller than it is wide, so a downward drag resized it 1.8x faster than the cursor moved (100px of drag jumped the scale to 1.4). `dy` now divides by the base *height*, so the bottom edge tracks the pointer the way the left edge always did; whichever axis asks for more growth drives the scale, so the grip never lags behind a diagonal drag. Bases are measured from the live box once on `pointerdown` (`offsetWidth`/`scrollHeight` ÷ the starting scale) — re-measuring mid-drag would feed a just-resized box back into its own input, and `scrollHeight` is the right height because `max-height` clips the visible box while the content is what the scale drives. The QA suite asserts the 1:1 tracking property rather than a scale number; the old test encoded the buggy divisor as `1.09`. `min-width` is capped to `calc(100vw - 24px)` for the same reason sideways, so a maxed-out scale can't force horizontal scroll on a narrow screen. The grip lives in a `position:sticky` footer row so it never scrolls out of reach, even with Quarterly Archive's long content open. Double-click resets to `1`.
@@ -546,7 +583,6 @@ grouped by what they protect:
 
 ## Could be done
 
-- Live market price feeds for **assets** (brokerage holdings, etc.) — still manual entry. (Treasury yields, CPI, and a reference economic calendar are now live-pulled — see Macro Signals / Economic Calendar above.)
 - Per-asset value history — only net-worth *totals* are snapshotted continuously. The quarterly archive now records every holding once per quarter; anything finer-grained is still open
 - Budget **history** — the Budgeting tab models a single current month. The quarterly archive seals the budget once per quarter, but there's still no month-over-month tracking or actual-vs-budget over time (net worth has `history[]`, budget has no equivalent). Natural next step if budgeting gets used seriously.
 - Transaction-level tracking / bank import — budgeting is category-level and hand-entered by design
@@ -569,15 +605,15 @@ grouped by what they protect:
 
 - Everything lives in one `<script>` block at the bottom of the file.
 - **There is no test suite in the repo.** The quarterly archive was QA'd with a throwaway Playwright script driving the real builds over `file://` (Chrome, plus Playwright's Firefox and WebKit). Two things will bite anyone automating this page again: **`page.wait_for_function()` fails** — it polls by evaluating a string, which the hash-only `script-src` correctly refuses (`EvalError … 'unsafe-eval'`); poll `page.evaluate()` from the test side instead, which isn't subject to page CSP. And **don't assign to a global named `status` in an evaluate** — it's `window.status` and coerces arrays to strings. Don't "fix" the first one with `bypass_csp`: the CSP is part of what needs testing.
-- State object shape: `{ updated, onboarded, hintsDone, profile{name,goal,nameColor}, theme, lang, currency, fx{rates{},lastFetch}, calendarOrder[], liveCalHeight, autoRefresh, lastFetch, assets[], liabilities[], history[], yields[], inflation[], calendar[], goals[], budget{}, chat{ack,endpoint,model,messages[]}, archive{lastQuarter,lastAt,salt,head,count}, tapePaused, exampleData }`. No category-management fields — categories are just strings on each asset/liability. **All monetary values are stored in USD regardless of the selected display currency.**
+- State object shape: `{ updated, onboarded, hintsDone, profile{name,goal,nameColor}, theme, lang, currency, fx{rates{},lastFetch}, calendarOrder[], liveCalHeight, autoRefresh, lastFetch, assets[], liabilities[], history[], yields[], inflation[], calendar[], goals[], budget{}, chat{ack,endpoint,model,messages[]}, archive{lastQuarter,lastAt,salt,head,count}, quotes{enabled,endpoint,lastFetch}, tapePaused, exampleData }`. No category-management fields — categories are just strings on each asset/liability. **All monetary values are stored in USD regardless of the selected display currency.**
 - **Every new state field needs a line in `sanitizeState()`** — it is the single door into `state` (called by both `load()` and `importJSON()`) and supplies every default, so a field missing from it is silently dropped on the next load. This replaces the old per-scalar `load()` backfills, which are gone. `normalizeBudget()` still plays the same role for the budget block. See **Security posture**.
 - `budget` = `{ income:[{id,name,cat,amount,optional,notes}], expenses:[{id,name,cat,amount,limit,kind,optional,notes}], assumptions:{rate,years} }`, where `kind` ∈ `essential|discretionary`. Categories come from the active goal's `CAT_SETS` entry (personal 11 income / 21 expense; business 7 / 16). **`normalizeBudget()` is the compatibility shim** — called from BOTH `load()` and `importJSON()`; it backfills missing arrays/assumptions/ids and coerces a bad `kind`, so older saves and partial imports don't crash the tab. Any new budget field should get a default there too.
-- `assets`/`liabilities` items: `{ id, name, cat, value, notes }`. Categories come from the active goal's `CAT_SETS` entry (personal 13 assets incl. "Alternative Asset" and "Other" / 6 liabilities; business 10 / 6) — no user-editable category list. `colorForCat(c)` returns the curated color from `CAT_COLOR` when one exists, otherwise a deterministic hash-based color from `CAT_PALETTE`, so any category string (even a stray/legacy one) still renders with a stable color.
+- `assets`/`liabilities` items: `{ id, name, cat, value, notes }`; assets also carry `{ ticker, shares, price, priceAt }` (`price` in USD, `null` until fetched; `priceAt` is the date the quote is as of). Categories come from the active goal's `CAT_SETS` entry (personal 13 assets incl. "Alternative Asset" and "Other" / 6 liabilities; business 10 / 6) — no user-editable category list. `colorForCat(c)` returns the curated color from `CAT_COLOR` when one exists, otherwise a deterministic hash-based color from `CAT_PALETTE`, so any category string (even a stray/legacy one) still renders with a stable color.
 - The Overview allocation panel (`renderOverview()`) groups `state.assets` by whatever string is in `a.cat` — it has no awareness of `CAT_SETS` beyond coloring, so it will happily show a category that isn't in the active goal's dropdown if old, imported, or other-goal data has one. That is by design and is why `catOptions()` exists: the chart and the select agree on the real value rather than the select quietly showing something else.
 - `history` items: `{ date, net, assets, liab }` — one point per `snapshot()` call.
 - `yields` items: `{ date, y10, y20, y30 }`; `inflation` items: `{ date, cpi, note? }`.
 - `calendar` items: `{ id, date, event, imp, notes }`, `imp` ∈ High/Med/Low/Personal.
 - `THEMES` object defines all theme tokens; `applyTheme()` writes them as CSS custom properties at runtime.
 - `seed()` produces first-run data; `load()`/`save()` wrap `localStorage` under **the key for that build** — `KEY` / `LEGACY_KEY` live in the `@variant:begin storage` block and differ per build (see Snapshot). `load()` migrates `LEGACY_KEY` forward automatically if `KEY` is empty, which is both the `wealthdesk.v1` path and the personal build's `somifinance.v1` path. Note: browsers that went through the earlier (reverted) custom-category feature may still have stray `customCats`/`altAssetSeeded` keys sitting unused in their saved JSON — harmless, nothing reads them anymore.
-- Live-data functions: `fetchTreasuryYields()` / `fetchLatestCPI()` / `refreshMacroData()` (`refreshMacroData()`) — no API keys, both sources are open government data. **Do not swap these for Yahoo Finance** if asked again: confirmed via direct testing that Yahoo's endpoints aren't CORS-open (would silently fail in-browser with no backend to proxy through) and Yahoo has no CPI data at all (that's a BLS/government stat, not market data).
+- Live-data functions: `fetchTreasuryYields()` / `fetchLatestCPI()` / `refreshMacroData()` (`refreshMacroData()`) — no API keys, both sources are open government data. **Do not swap these for Yahoo Finance** if asked again: confirmed via direct testing that Yahoo's endpoints aren't CORS-open (would silently fail in-browser with no backend to proxy through — stock quotes get around this with the local `quotes.py` helper, which is opt-in and not something the always-available macro feeds should depend on) and Yahoo has no CPI data at all (that's a BLS/government stat, not market data).
 - Same rejection logic applies to the calendar widget: Bloomberg and investing.com both returned HTTP 403 on direct request (active bot-blocking) and both prohibit scraping in ToS — don't attempt to pull structured data from either. TradingView's `embed-widget-events.js` (`#tvBox`) is the current no-key solution; Finnhub and Financial Modeling Prep are confirmed CORS-open fallbacks if structured (editable-table-feeding) calendar data is wanted later, but both require the user to sign up for a free API key first.
