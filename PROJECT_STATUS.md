@@ -217,7 +217,7 @@ called `esc`, which shadows the global escaper for that whole function body.
 ### Stock quotes — opt-in, symbols only, through a loopback helper
 
 ⚙ → **Stock quotes** lets an asset row carry a `ticker` and `shares` and pulls the stock name and
-last price from Yahoo Finance. Five things here are load-bearing:
+last price from Yahoo Finance. Six things here are load-bearing:
 
 - **The page never talks to Yahoo.** Yahoo's endpoints are not CORS-open (see Key facts), so
   `quotes.py` — standard library only, tracked in the repo — runs on the user's machine, asks
@@ -240,7 +240,12 @@ last price from Yahoo Finance. Five things here are load-bearing:
   import-editable, so it is regexed through `CHAT_LOOPBACK` in `sanitizeState()`,
   `normalizeAddons()`, the ⚙ input and `fetchQuotes()`. `quotes.py` in turn serves one path,
   validates symbols against the page's own `TICKER_RE`, caps them at 50, rejects a non-loopback
-  `Host`, and sends a CORS header only to `null`/loopback origins — it is not a proxy.
+  `Host`, sends a CORS header only to `null`/loopback origins, follows no redirects, and answers
+  at most 20 requests a minute — it is not a proxy. It is unauthenticated, and whatever listens on
+  that port receives the symbol list: see SECURITY.md for the limits that are accepted.
+- **Refresh on the Ledger is the only trigger.** `maybeAutoRefresh()` deliberately does not call
+  `refreshQuotes()`. A fetch on page load would make the consent dialog's "only when you press
+  Refresh" false. Don't wire quotes into auto-refresh without changing that dialog first.
 
 Fetched fields are coerced exactly like an import (`sTicker`/`sNumN`/`sStr`/`sDateN`) before they
 touch state. A fetched name fills `name` only when the user left it blank. Non-USD listings are

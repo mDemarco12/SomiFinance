@@ -24,6 +24,8 @@ it has validated, and listens on 127.0.0.1 only.
 import json
 import re
 import sys
+import threading
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -34,10 +36,36 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 HOST = "127.0.0.1"
 DEFAULT_PORT = 8765
 MAX_SYMBOLS = 50                                   # the page enforces the same cap (QUOTE_MAX)
-SYMBOL_RE = re.compile(r"^[A-Z0-9.\-^=]{1,12}$")   # the page's TICKER_RE
+# The page's TICKER_RE. The lookahead demands a letter or digit: "." and ".." fit the character
+# class but are path segments, and the symbol goes into a URL path below.
+SYMBOL_RE = re.compile(r"^(?=.*[A-Z0-9])[A-Z0-9.\-^=]{1,12}$")
 UPSTREAM = "https://query1.finance.yahoo.com/v8/finance/chart/%s?range=1d&interval=1d"
-UA = "Mozilla/5.0 (SomiFinance quote helper)"
+UA = "Mozilla/5.0"          # generic on purpose: Yahoo is not told which app is asking
 TIMEOUT = 8
+# A real Refresh is one request. Anything faster than this is not the page — most likely a
+# website poking at the port blind — and it must not be able to spend your IP's welcome at Yahoo.
+MAX_PER_MINUTE = 20
+_recent, _recent_lock = [], threading.Lock()
+
+
+def allowed_now():
+    now = time.monotonic()
+    with _recent_lock:
+        _recent[:] = [t for t in _recent if now - t < 60]
+        if len(_recent) >= MAX_PER_MINUTE:
+            return False
+        _recent.append(now)
+        return True
+
+
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    """The only URL this script fetches is the one it built. A 3xx is an error, not a new target."""
+
+    def redirect_request(self, *args, **kwargs):
+        return None
+
+
+OPENER = urllib.request.build_opener(NoRedirect)
 
 # A page opened by double-clicking the file has the origin "null". Loopback origins cover anyone
 # serving the file locally. Any other origin gets no CORS header, so a website you happen to
@@ -50,7 +78,7 @@ def fetch_one(symbol):
     url = UPSTREAM % urllib.parse.quote(symbol, safe="")
     req = urllib.request.Request(url, headers={"User-Agent": UA, "Accept": "application/json"})
     try:
-        with urllib.request.urlopen(req, timeout=TIMEOUT) as res:
+        with OPENER.open(req, timeout=TIMEOUT) as res:
             data = json.loads(res.read().decode("utf-8"))
     except urllib.error.HTTPError as e:
         return "err", "not found" if e.code == 404 else "Yahoo answered %d" % e.code
@@ -108,7 +136,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         # A Host that is not loopback means the request was aimed here by a hostile DNS name.
-        host = (self.headers.get("Host") or "").rsplit(":", 1)[0]
+        host = re.sub(r":\d{1,5}$", "", (self.headers.get("Host") or "").strip().lower())
         if host not in ("127.0.0.1", "localhost", "[::1]"):
             return self._send(403, {"error": "loopback only"})
         url = urllib.parse.urlsplit(self.path)
@@ -122,6 +150,8 @@ class Handler(BaseHTTPRequestHandler):
                 symbols.append(s)
         if not symbols or len(symbols) > MAX_SYMBOLS or not all(SYMBOL_RE.match(s) for s in symbols):
             return self._send(400, {"error": "pass 1-%d valid symbols" % MAX_SYMBOLS})
+        if not allowed_now():
+            return self._send(429, {"error": "too many requests — wait a minute"})
         self._send(200, lookup(symbols))
 
     def log_message(self, fmt, *args):

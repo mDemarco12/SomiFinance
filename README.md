@@ -94,13 +94,13 @@ Your data is saved automatically to that browser's local storage. Use **Export**
 
 Everything runs client-side. Your figures never leave your browser — there's no account, no server, and no analytics.
 
-Chart.js is bundled directly into the file rather than loaded from a CDN, so **opening the page makes zero network requests by default**. The app only ever reaches out when you ask it to, and never sends your financial data anywhere:
+Chart.js is bundled directly into the file rather than loaded from a CDN, so **opening the page makes zero network requests by default**. The app only ever reaches out when you ask it to, and never sends your figures anywhere. The one thing about your holdings that can leave your machine is a list of ticker symbols, and only if you turn stock quotes on:
 
 | Request | When | What it's for |
 |---|---|---|
 | TradingView | First time you open the Economic Calendar tab | The live calendar widget |
 | U.S. Treasury + BLS | Refresh on Macro Signals (or on load, if you turn auto-refresh on) | Latest yields and CPI |
-| open.er-api.com | Only when a non-USD currency is selected | Exchange rates |
+| open.er-api.com | When a non-USD currency is selected, or when stock quotes are on and a quote comes back priced in another currency | Exchange rates |
 | Yahoo Finance, via `quotes.py` on your own machine | **Off by default.** Only after you turn on ⚙ → Stock quotes, and then when you press Refresh on Assets & Liabilities | Stock name and last price. Only your ticker symbols are sent — never share counts, values or notes |
 | Your own machine (`127.0.0.1`/`localhost`) | When you open the ✦ assistant panel (one quick check that Ollama is reachable) and when you send it a message | Local Ollama chat — never leaves your computer |
 
@@ -110,7 +110,7 @@ Each fails gracefully — if a request doesn't go through, the app keeps working
 
 Two things enforce that rather than just promising it:
 
-- **A Content-Security-Policy** in the page head names every host the app may contact — three remote hosts, plus loopback ports for the optional local assistant — so even a bug or an injection has nowhere to send your figures off this machine. Its `script-src` lists SHA-256 hashes instead of allowing inline script, which means injected event handlers won't run at all. The loopback allowance is unroutable off-machine, but it does widen what injected script could reach on your own machine — see `PROJECT_STATUS.md` for the honest tradeoff.
+- **A Content-Security-Policy** in the page head names every host the app may contact — three remote hosts, plus loopback ports for the optional local assistant and the optional quote helper (which is what contacts Yahoo Finance) — so even a bug or an injection has nowhere to send your figures off this machine. Its `script-src` lists SHA-256 hashes instead of allowing inline script, which means injected event handlers won't run at all. The loopback allowance is unroutable off-machine, but it does widen what injected script could reach on your own machine — see `PROJECT_STATUS.md` for the honest tradeoff.
 - **The TradingView calendar runs no third-party script.** It's a sandboxed iframe pointed directly at TradingView's own page, with no same-origin access — it can't read your saved data or touch the page. Opening the Calendar tab does contact TradingView's servers, but they receive nothing about you beyond the request itself.
 
 Imported backups are treated as untrusted input: every field is validated against a whitelist and all row ids are regenerated, and nothing is written to storage until the imported file has rendered cleanly.

@@ -8,7 +8,8 @@
 <!--
   Content-Security-Policy. This is what makes the "your data stays here" claim enforced by the
   browser rather than merely intended: connect-src names every host this page may talk to — three
-  remote hosts plus the loopback ports a local Ollama assistant listens on — so even a successful
+  remote hosts plus the loopback ports a local Ollama assistant and the optional quote helper listen
+  on (that helper, quotes.py, is what contacts Yahoo Finance; this page never does) — so even a successful
   injection has nowhere to send your figures off this machine. 127.0.0.1/localhost are unroutable,
   so the loopback entries add no exfiltration path; they do widen what injected script could reach
   on your own machine (see PROJECT_STATUS.md "Security posture" for the honest tradeoff).
@@ -33,7 +34,7 @@
 -->
 <meta http-equiv="Content-Security-Policy" content="
   default-src 'none';
-  script-src 'sha256-LEfI6wtiATeJWC0ehfYamH0fHWvD5leT9b99SJsRVXU=' 'sha256-Lc5LnTFHoaFGJLVmz9IodMS6m5qPTJsIluA+d9kJg04=';
+  script-src 'sha256-LEfI6wtiATeJWC0ehfYamH0fHWvD5leT9b99SJsRVXU=' 'sha256-GybWWp/1lqhsp2bX78Hf2hNdIBYrlX2iwg8NjFTUe7A=';
   style-src 'unsafe-inline';
   img-src data: https:;
   connect-src https://home.treasury.gov https://api.bls.gov https://open.er-api.com http://127.0.0.1:* http://localhost:*;
@@ -1253,7 +1254,8 @@
         <br><br>
         <b>Stock quotes are a fourth, and they are off unless you turn them on in ⚙.</b> When on, pressing Refresh on
         Assets &amp; Liabilities sends the ticker symbols you entered to Yahoo Finance, through a small helper running on
-        your own computer. Your share counts, position values and notes are not sent.
+        your own computer. Your share counts, position values and notes are not sent. If one of those stocks is priced
+        in another currency, the exchange-rate lookup runs too, even with USD selected.
         <br><br>
         One caveat worth knowing: the calendar widget is third-party code from TradingView. It runs inside a
         <b>sandboxed frame</b> with no access to this page or to your saved data, and TradingView sees only that
@@ -1806,6 +1808,9 @@ const CHAT_LOOPBACK=/^https?:\/\/(127\.0\.0\.1|localhost|\[::1\])(:\d{1,5})?$/;
    Three locks, in the order they bite:
      state.quotes.enabled  — false in every build; only showQuotesConsent() turns it on, and
                              importJSON() forces it back off so a file can never opt a user in.
+                             Refresh on the Ledger is the ONLY trigger: maybeAutoRefresh()
+                             deliberately leaves quotes alone, so the consent dialog's "when
+                             you press Refresh" is the whole truth.
      quotesOn()            — re-checked INSIDE fetchQuotes() and refreshQuotes(), not just where
                              the columns are drawn. A render-time-only gate is not a gate (see
                              loadExampleData()).
@@ -1813,7 +1818,9 @@ const CHAT_LOOPBACK=/^https?:\/\/(127\.0\.0\.1|localhost|\[::1\])(:\d{1,5})?$/;
                              back to loopback on every load, exactly like the assistant's. */
 const QUOTE_ENDPOINT_DEFAULT="http://127.0.0.1:8765";
 const QUOTE_MAX=50;          // symbols per request — quotes.py enforces the same cap
-const TICKER_RE=/^[A-Z0-9.\-^=]{1,12}$/;
+// The lookahead demands a letter or digit: "." and ".." fit the character class but are path
+// segments, not symbols, and quotes.py puts the symbol in a URL path.
+const TICKER_RE=/^(?=.*[A-Z0-9])[A-Z0-9.\-^=]{1,12}$/;
 const sTicker=v=>{const t=sStr(v,12).trim().toUpperCase();return TICKER_RE.test(t)?t:"";};
 const quotesOn=()=>!!(state&&state.quotes&&state.quotes.enabled===true);
 // A row whose Value is computed rather than typed. All three parts are needed: without a price
@@ -3180,8 +3187,8 @@ function quoteToUSD(price,ccy){
   const r=(own(CURRENCIES,c)&&state.fx&&state.fx.rates)?state.fx.rates[c]:0;
   return r>0?p/r:null;
 }
-// auto=true → the on-load setting: no progress toast, and silent when the helper isn't running
-// (it usually isn't, and an error on every page load would be noise).
+// auto=true runs it without toasts. Nothing calls it that way today — see maybeAutoRefresh() —
+// and anything that starts to must update the consent dialog first.
 async function refreshQuotes(auto){
   if(!quotesOn())return false;
   const symbols=[...new Set(state.assets.map(a=>a.ticker).filter(Boolean))].slice(0,QUOTE_MAX);
@@ -3200,6 +3207,9 @@ async function refreshQuotes(auto){
     if(!auto)toastErr("Couldn't reach the quote helper — start quotes.py and press Refresh again. Your last prices are unchanged.");
     return false;
   }
+  // Re-check after EVERY await, before the next request or any write. Without this one, turning
+  // quotes off mid-request still let the exchange-rate lookup below go out.
+  if(!quotesOn()){done_();return false;}
   // fetched values get the same coercion an import does before they touch state
   const by=Object.create(null);
   json.quotes.slice(0,QUOTE_MAX).forEach(q=>{
@@ -3218,7 +3228,7 @@ async function refreshQuotes(auto){
       state.fx.lastFetch=today();
     }catch(e){console.warn("FX fetch for quotes failed:",e);}
   }
-  // Two awaits have passed: the feature may have been switched off, or state replaced by an
+  // Another await has passed: the feature may have been switched off, or state replaced by an
   // import. Re-check, and read rows from live state rather than anything captured above.
   if(!quotesOn()){done_();return false;}
   let updated=0;const missed=[];
@@ -3779,7 +3789,7 @@ function renderQuotesList(){
 function setQuotesEnabled(on){
   state.quotes.enabled=on===true;
   save();
-  renderQuotesList();setSectionCurrent();
+  renderQuotesList();setSectionCurrent();renderFoot();
   renderLedger();   // shows or hides the three columns, and re-locks or frees the Value cells
   document.getElementById("refreshBtn").title=refreshTitle(currentTab);
   toast(on?"Stock quotes on — add a ticker and shares in Assets & Liabilities, then Refresh."
@@ -3799,8 +3809,10 @@ function showQuotesConsent(){
       stock's name and last price.<br><br>
       Your <b>share counts, position values and notes are not sent</b>. They stay in this browser,
       and each position's value is worked out here.<br><br>
-      Prices are fetched when you press <b>Refresh</b> on Assets &amp; Liabilities, through a small
-      helper (<b>quotes.py</b>) that you run on this computer. You can turn this off again at any time.
+      Prices are fetched only when you press <b>Refresh</b> on Assets &amp; Liabilities, through a small
+      helper (<b>quotes.py</b>) that you run on this computer. If a stock is priced in another
+      currency, an exchange-rate lookup also runs; it carries nothing about you.
+      You can turn this off again at any time.
     </div>
     <div class="wc-actions">
       <button type="button" class="wc-go" id="qcGo">Turn on quotes</button>
@@ -3876,9 +3888,11 @@ function renderGoalList(){
 function maybeAutoRefresh(){
   const mode=state.autoRefresh||"off";
   if(mode==="off")return;
-  if(!(mode==="stale"&&state.lastFetch===today()))refreshMacroData(true);
-  // Quotes ride the same setting, and only if the user has separately turned them on.
-  if(quotesOn()&&!(mode==="stale"&&state.quotes.lastFetch===today()))refreshQuotes(true);
+  if(mode==="stale"&&state.lastFetch===today())return;
+  // Stock quotes are deliberately NOT refreshed here. The consent dialog tells the user their
+  // ticker symbols go out when they press Refresh; a fetch on page load would make that false,
+  // and would hand the list to whatever is listening on the helper port with nobody watching.
+  refreshMacroData(true);
 }
 
 /* ---------- language picker ---------- */
@@ -4488,7 +4502,9 @@ function maybeBanner(){
 function renderFoot(){
   document.getElementById("foot").innerHTML=
     `Data lives only in this browser via localStorage${canPersist?"":" <b style='color:var(--down)'>(blocked here — export to keep your data)</b>"}. `+
-    `No account, no server — your financial data never leaves your machine. Back up with <code>Export</code>. `+
+    `No account, no server — your figures never leave your machine. `+
+    (quotesOn()?`Stock quotes are on, so your ticker symbols go to Yahoo Finance when you press Refresh on the ledger. `:"")+
+    `Back up with <code>Export</code>. `+
     `An Export file is plain JSON, so anything that can write that shape can feed this page — export once to see it. `+
     `Not financial advice.`;
 }

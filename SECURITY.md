@@ -32,34 +32,56 @@ worth sending if you can show the mitigation fails, but the reasoning is documen
   the page may contact.
 - **Loopback is allowed on any port** so the optional local assistant can reach Ollama and the
   optional quote helper. This is unroutable off the machine but does widen what injected script
-  could reach on it. The tradeoff is written up in `PROJECT_STATUS.md`.
+  could reach on it. The tradeoff is written up in `PROJECT_STATUS.md`. One consequence is new:
+  while `quotes.py` is running, a loopback request to it does cause a request off the machine —
+  to Yahoo Finance only, carrying only symbol-shaped strings. The in-app switch does not protect
+  the helper from script that has already managed to run in the page, so stop the helper when you
+  are not using it.
 - **Stock quotes are off by default and send ticker symbols only.** The page cannot call Yahoo
   Finance itself (Yahoo's endpoints are not CORS-open), so prices come through `quotes.py`, a
   standard-library script you run on your own machine. With the feature on, pressing Refresh on
-  Assets & Liabilities sends the symbols you typed to that helper, which sends them to Yahoo. No
-  share count, value, name or note is put in the request; each position's value is computed in the
-  browser. Three things back that up:
+  Assets & Liabilities sends every ticker symbol on your asset rows (up to 50, whether you typed
+  them or they came in with an imported backup) to that helper, which sends them to Yahoo. That
+  button is the only trigger: auto-refresh does not fetch quotes, so nothing is sent on page load.
+  No share count, value, name or note is put in the request; each position's value is computed in
+  the browser. Three things back that up:
   - *Consent is given in the app, by the person using it.* The switch is off in every build. The
-    only way to turn it on is the dialog under ⚙ → Stock quotes, which is shown every time and is
-    not remembered. Importing a backup forces the switch off, so a file cannot opt anyone in.
+    only way to turn it from off to on is the dialog under ⚙ → Stock quotes. The dialog is shown
+    on every such switch; there is no stored "already agreed" flag that skips it. Once on, the
+    setting is saved in this browser and stays on across reloads until you turn it off.
+    Importing a backup forces the switch off, so a file cannot opt anyone in — though the
+    tickers in that file are kept, and are what gets sent if you then turn quotes on.
   - *The switch is checked where the request is made*, not only where the columns are drawn, and
-    again after each wait, so turning it off mid-request stops the result being applied.
-  - *The helper address must be loopback.* It is user- and import-editable, so it is checked
-    against the same loopback-only pattern as the assistant's endpoint on every load and before
-    every request.
+    again after each wait, so turning it off mid-request stops any further request and stops the
+    result being applied.
+  - *The helper address must be loopback*: `127.0.0.1` or the name `localhost`, on any port. It is
+    user- and import-editable, so it is checked against the same loopback-only pattern as the
+    assistant's endpoint on every load and before every request. An imported backup can change
+    the port, but not point it off the machine.
 
   Yahoo therefore learns which symbols you asked about and your IP address, as it would if you
-  looked them up on its website. If a holding is listed in a currency other than USD, an
-  exchange-rate lookup to `open.er-api.com` also runs; it carries no data about you.
+  looked them up on its website. If a quote comes back priced in one of the other currencies the
+  app converts (JPY, TWD, CNY, EUR, GBP) and no rate has been fetched yet that day, an
+  exchange-rate lookup to `open.er-api.com` also runs, even when your display currency is USD.
+  That request is a fixed URL with nothing about you in it; that host sees your IP address.
 - **`quotes.py` is deliberately not a proxy.** It listens on `127.0.0.1` only, answers one path,
-  builds the Yahoo URL itself from symbols it has validated (at most 50 per request), and refuses
-  a request whose `Host` header is not loopback. It sends a CORS header only to a `null` origin
-  (a page opened from a file) or a loopback origin, so an ordinary website cannot read its
-  answers. Two limits are known and accepted: a website can still cause it to *make* a lookup for
-  symbols that site chose, without seeing the result, and a sandboxed frame on any site has a
-  `null` origin and so can read public quotes for symbols it supplies. Neither reveals anything
-  about your holdings, because the helper never knows them — it holds no state and is told only
-  the symbols in each request. It logs that a request happened, not which symbols were asked for.
+  builds the Yahoo URL itself from symbols it has validated (at most 50 per request), follows no
+  redirects, and refuses a request whose `Host` header is not loopback. It sends a CORS header
+  only to a `null` origin (a page opened from a file) or a loopback origin, so an ordinary website
+  cannot read its answers. It answers at most 20 requests a minute. It keeps no record of what was
+  asked, and logs that a request happened, not which symbols. It does use your system's proxy
+  settings, if you have any. Three limits are known and accepted:
+  - A website can still cause it to *make* a lookup for symbols that site chose, without seeing
+    the result. The per-minute cap bounds how many Yahoo requests that can spend from your IP.
+  - A sandboxed frame on any site has a `null` origin, so it can read public quotes for symbols
+    it supplies. Neither of these reveals your holdings: the helper is told only the symbols in
+    each request, and these requests are not yours.
+  - **The helper is unauthenticated, and the page trusts whatever answers on the helper port.**
+    This is the one limit that can expose your symbol list. If `quotes.py` is not running and
+    another program on the same machine — another user's, on a shared computer — is listening
+    on that port, pressing Refresh hands it your ticker symbols. A careless one makes the Refresh fail; a
+    deliberate one could answer with real prices and give no sign. Don't turn stock quotes on on a machine you share with
+    people you would not show that list to.
 - **The TradingView calendar runs no third-party script.** It's a sandboxed iframe pointed
   directly at TradingView's own embed URL, without `allow-same-origin`, giving it an opaque origin
   so it cannot read stored data or touch the page — there's no loader script to sandbox in the
