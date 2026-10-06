@@ -295,7 +295,7 @@ function seed(){
     autoRefresh:"off",   // off | stale | always — default off keeps page load request-free
     lastFetch:"",        // YYYY-MM-DD of the last fully successful macro fetch
     archive:{lastQuarter:"",lastAt:"",salt:"",head:"",count:0},   // nudge + truncation anchor only
-    quotes:{enabled:false,endpoint:"http://127.0.0.1:8765",lastFetch:""},   // Yahoo quotes — opt-in, see quotesOn()
+    quotes:{enabled:false,endpoint:"http://127.0.0.1:8765",lastFetch:"",gainMode:"amount"},   // Yahoo quotes — opt-in, see quotesOn()
     assets:%s,
     liabilities:%s,
     history:[],

@@ -31,7 +31,7 @@
 -->
 <meta http-equiv="Content-Security-Policy" content="
   default-src 'none';
-  script-src 'sha256-LEfI6wtiATeJWC0ehfYamH0fHWvD5leT9b99SJsRVXU=' 'sha256-4bDjS8+ysgkU7Xb+L7Nt6kqnHgqjEQplSQYI7sO7wcE=';
+  script-src 'sha256-LEfI6wtiATeJWC0ehfYamH0fHWvD5leT9b99SJsRVXU=' 'sha256-GfsKP2QMYSnwJHUbUQVy76smvrIGjJwwowjvsOho6pA=';
   style-src 'unsafe-inline';
   img-src data: https:;
   connect-src https://home.treasury.gov https://api.bls.gov https://open.er-api.com http://127.0.0.1:* http://localhost:*;
@@ -412,8 +412,15 @@
   /* These five used outline:none + a 1px border where the rest of the app uses a 2px ring with
      an offset, and keyed off :focus rather than :focus-visible. The border is kept because it
      reads well while typing; the ring is added back so a keyboard user gets the same signal
-     here as everywhere else. .cell is the main data-entry surface, dozens per screen. */
-  .cell:focus{outline:none;border-color:var(--amber);background:var(--panel-2)}
+     here as everywhere else. .cell is the main data-entry surface, dozens per screen.
+
+     Focus changes the OUTSIDE of the box only — the accent border and ring — never its fill.
+     It used to set `background:var(--panel-2)`, and that shorthand also reset background-size,
+     -position and -repeat. On a select.cell those are what keep the dropdown arrow's two
+     gradients 4px wide, so a focused select stretched them over the whole box: an --ink fill
+     with a large triangular gap and the selected text invisible on top of it. Do not put a
+     `background` shorthand back on .cell:focus. */
+  .cell:focus{outline:none;border-color:var(--amber)}
   .cell:focus-visible{outline:2px solid var(--amber);outline-offset:1px}
   .cell.num{text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums}
   /* A Value cell that is computed (shares x last price) rather than typed. */
@@ -424,13 +431,29 @@
   #assetTable:not(.quotes-on) .q-col{display:none}
   .q-price{text-align:right;padding-right:10px !important;white-space:nowrap;color:var(--muted);font-size:var(--t-mono)}
   .q-price small{display:block;color:var(--faint);font-size:var(--t-fine)}
+  /* Gain is a button, not a cell input: clicking it flips the whole column between an amount and
+     a percentage. The colour rules are spelled out because a bare .up/.down sits earlier in the
+     file and would lose to .gain-btn's own colour. */
+  .q-gain{text-align:right;white-space:nowrap}
+  /* The header widths are inline percentages sized for five columns. With ten, Item, Category
+     and Value kept 76% between them and Notes was squeezed to a few clipped characters. */
+  #assetTable.quotes-on #thAssetItem{width:16% !important}
+  #assetTable.quotes-on #thAssetCat{width:12% !important}
+  #assetTable.quotes-on #thAssetValue{width:11% !important}
+  #assetTable.quotes-on thead th{white-space:nowrap}
+  .gain-btn{background:none;border:1px solid transparent;border-radius:5px;padding:8px;cursor:pointer;
+    color:var(--ink);font-family:var(--mono);font-size:var(--t-body);font-variant-numeric:tabular-nums}
+  .gain-btn.up{color:var(--up)} .gain-btn.down{color:var(--down)}
+  .gain-btn:hover{border-color:var(--line)}
+  .gain-btn:focus-visible{outline:2px solid var(--amber);outline-offset:1px}
+  .gain-none{display:inline-block;padding:8px;color:var(--faint);font-family:var(--mono)}
   /* appearance:none removed the native arrow and nothing replaced it, so the category selects
      in three tables had no affordance that they were dropdowns at all. */
   select.cell{cursor:pointer;appearance:none;padding-right:18px;
     background-image:linear-gradient(45deg,transparent 50%,var(--faint) 50%),linear-gradient(135deg,var(--faint) 50%,transparent 50%);
     background-position:calc(100% - 10px) calc(50% + 1px),calc(100% - 6px) calc(50% + 1px);
     background-size:4px 4px,4px 4px;background-repeat:no-repeat}
-  select.cell:hover,select.cell:focus{
+  select.cell:hover{
     background-image:linear-gradient(45deg,transparent 50%,var(--ink) 50%),linear-gradient(135deg,var(--ink) 50%,transparent 50%)}
   .del{background:none;border:none;color:var(--faint);cursor:pointer;font-size:var(--v-icon);padding:4px 8px;border-radius:5px}
   .del:hover{color:var(--down);background:rgba(229,72,77,.1)}
@@ -606,7 +629,7 @@
   #tab-budget .tbl-wrap>table{min-width:620px}
   #tab-calendar .tbl-wrap>table{min-width:480px}
   #tab-ledger .tbl-wrap>table,#tab-budget .tbl-wrap>table.goals-table{min-width:420px}
-  #tab-ledger .tbl-wrap>table.quotes-on{min-width:860px}
+  #tab-ledger .tbl-wrap>table.quotes-on{min-width:1100px}
   .arch-wrap>table{min-width:680px}
   .arch-wrap td.tnum,.arch-wrap td.num{white-space:nowrap}
   /* The archive's money columns were the one set of figures with no alignment rule at all, so
@@ -973,9 +996,9 @@
       <h3><span id="hLedgerAssets">Assets</span> <span class="tag">editable · click any cell</span></h3>
       <div class="tbl-wrap">
       <table id="assetTable">
-        <thead><tr><th style="width:34%" id="thAssetItem">Item</th><th style="width:22%" id="thAssetCat">Category</th><th class="q-col" style="width:96px" id="thAssetTicker">Ticker</th><th class="num q-col" style="width:96px" id="thAssetShares">Shares</th><th class="num q-col" style="width:124px" id="thAssetPrice">Price</th><th class="num" style="width:20%" id="thAssetValue">Value</th><th id="thAssetNotes">Notes</th><th style="width:34px"></th></tr></thead>
+        <thead><tr><th style="width:34%" id="thAssetItem">Item</th><th style="width:22%" id="thAssetCat">Category</th><th class="q-col" style="width:80px" id="thAssetTicker">Ticker</th><th class="num q-col" style="width:80px" id="thAssetShares">Shares</th><th class="num q-col" style="width:100px" id="thAssetCost">Cost basis</th><th class="num q-col" style="width:112px" id="thAssetPrice">Price</th><th class="num" style="width:20%" id="thAssetValue">Value</th><th class="num q-col" style="width:104px" id="thAssetGain">Gain</th><th id="thAssetNotes">Notes</th><th style="width:34px"></th></tr></thead>
         <tbody id="assetBody"></tbody>
-        <tfoot><tr><td id="lblAssetTotal">Total assets</td><td></td><td class="q-col"></td><td class="q-col"></td><td class="q-col"></td><td class="num tnum" id="assetTotal">—</td><td></td><td></td></tr></tfoot>
+        <tfoot><tr><td id="lblAssetTotal">Total assets</td><td></td><td class="q-col"></td><td class="q-col"></td><td class="q-col"></td><td class="q-col"></td><td class="num tnum" id="assetTotal">—</td><td class="num tnum q-col" id="assetGainTotal">—</td><td></td><td></td></tr></tfoot>
       </table>
       </div>
       <button class="add-row" data-add="asset" id="btnAddAsset">+ Add asset</button>
@@ -1602,7 +1625,7 @@ function seed(){
     autoRefresh:"off",   // off | stale | always — default off keeps page load request-free
     lastFetch:"",        // YYYY-MM-DD of the last fully successful macro fetch
     archive:{lastQuarter:"",lastAt:"",salt:"",head:"",count:0},   // nudge + truncation anchor only
-    quotes:{enabled:false,endpoint:"http://127.0.0.1:8765",lastFetch:""},   // Yahoo quotes — opt-in, see quotesOn()
+    quotes:{enabled:false,endpoint:"http://127.0.0.1:8765",lastFetch:"",gainMode:"amount"},   // Yahoo quotes — opt-in, see quotesOn()
     assets,
     liabilities,
     history:demoHistory(netNow,liabNow),
@@ -1668,8 +1691,9 @@ function normalizeAddons(){
   if(typeof state.chat.model!=="string")state.chat.model="";
   if(!Array.isArray(state.chat.messages))state.chat.messages=[];
   if(!state.archive||typeof state.archive!=="object")state.archive={lastQuarter:"",lastAt:"",salt:"",head:"",count:0};
-  if(!state.quotes||typeof state.quotes!=="object")state.quotes={enabled:false,endpoint:QUOTE_ENDPOINT_DEFAULT,lastFetch:""};
+  if(!state.quotes||typeof state.quotes!=="object")state.quotes={enabled:false,endpoint:QUOTE_ENDPOINT_DEFAULT,lastFetch:"",gainMode:"amount"};
   if(state.quotes.enabled!==true)state.quotes.enabled=false;
+  if(state.quotes.gainMode!=="pct")state.quotes.gainMode="amount";
   if(!CHAT_LOOPBACK.test(state.quotes.endpoint||""))state.quotes.endpoint=QUOTE_ENDPOINT_DEFAULT;
 }
 // The filled budget that accompanies the example ledger. Hoisted out of the @variant block for
@@ -1823,6 +1847,25 @@ const quotesOn=()=>!!(state&&state.quotes&&state.quotes.enabled===true);
 // A row whose Value is computed rather than typed. All three parts are needed: without a price
 // or a share count there is nothing to compute, and the cell must stay editable.
 const valueDerived=a=>quotesOn()&&!!a.ticker&&a.price!=null&&(+a.shares>0);
+// Gain on a stock position, from the user's average cost PER SHARE. USD like every figure;
+// null when any of ticker, shares, cost basis or price is missing, so the cell shows a dash
+// rather than a gain computed against zero. Nothing here is ever sent anywhere.
+function rowGain(a){
+  if(!valueDerived(a)||!(+a.costBasis>0))return null;
+  const cost=a.shares*a.costBasis;
+  return {amount:a.shares*a.price-cost,cost,pct:(a.price/a.costBasis-1)*100};
+}
+const gainMode=()=>(state.quotes&&state.quotes.gainMode==="pct")?"pct":"amount";
+// Always signed, so the direction never rests on colour alone. One decimal for the percentage.
+function gainText(amount,pct){
+  if(gainMode()==="pct"){
+    const p=Math.round(pct*10)/10;
+    return (p>0?"+":p<0?"-":"")+Math.abs(p).toFixed(1)+"%";
+  }
+  if(Math.round(amount*fxRate()*100)===0)return fmt2(0);   // no "-$0.00"
+  return (amount>0?"+":"")+fmt2(amount);
+}
+const gainClass=n=>n>0?"up":n<0?"down":"";
 
 function sanitizeState(d){
   const s=seed();
@@ -1880,13 +1923,14 @@ function sanitizeState(d){
     h.shares=Math.max(0,sNum(r&&r.shares));
     h.price=(p!=null&&p>0)?p:null;
     h.priceAt=sDateN(r&&r.priceAt);
+    h.costBasis=Math.max(0,sNum(r&&r.costBasis));   // average cost per share; 0 = not set
     return h;
   };
   s.assets=sArr(o.assets).map(assetRow);
   const qs=(o.quotes&&typeof o.quotes==="object")?o.quotes:{};
   const qep=sStr(qs.endpoint,120).replace(/\/+$/,"");
   s.quotes={enabled:qs.enabled===true,endpoint:CHAT_LOOPBACK.test(qep)?qep:QUOTE_ENDPOINT_DEFAULT,
-    lastFetch:sDateN(qs.lastFetch)};
+    lastFetch:sDateN(qs.lastFetch),gainMode:sPick(qs.gainMode,["amount","pct"],"amount")};
   s.liabilities=sArr(o.liabilities).map(holding);
   s.history=sTail(o.history).map(h=>({date:sDate(h&&h.date),net:sNum(h&&h.net),
     assets:sNum(h&&h.assets),liab:sNum(h&&h.liab)}));
@@ -2249,6 +2293,7 @@ const LANGS={
     "ledger.addAsset":"Add asset","ledger.addLiability":"Add liability",
     "col.item":"Item","col.category":"Category","col.value":"Value","col.balance":"Balance",
     "col.ticker":"Ticker","col.shares":"Shares","col.price":"Price",
+    "col.costBasis":"Cost basis","col.currentValue":"Current value","col.gain":"Gain",
     "col.notes":"Notes","col.amount":"Amount","col.limit":"Limit","col.type":"Type",
     "col.date":"Date","col.event":"Event","col.importance":"Importance",
     "budget.monthlyCashFlow":"Monthly cash flow","budget.cashIn":"Cash in","budget.cashOut":"Cash out",
@@ -2277,6 +2322,7 @@ const LANGS={
     "ledger.addAsset":"新增資產","ledger.addLiability":"新增負債",
     "col.item":"項目","col.category":"類別","col.value":"金額","col.balance":"餘額",
     "col.ticker":"代號","col.shares":"股數","col.price":"價格",
+    "col.costBasis":"成本","col.currentValue":"現值","col.gain":"損益",
     "col.notes":"備註","col.amount":"金額","col.limit":"上限","col.type":"類型",
     "col.date":"日期","col.event":"事件","col.importance":"重要性",
     "budget.monthlyCashFlow":"每月現金流","budget.cashIn":"現金流入","budget.cashOut":"現金流出",
@@ -2305,6 +2351,7 @@ const LANGS={
     "ledger.addAsset":"新增资产","ledger.addLiability":"新增负债",
     "col.item":"项目","col.category":"类别","col.value":"金额","col.balance":"余额",
     "col.ticker":"代码","col.shares":"股数","col.price":"价格",
+    "col.costBasis":"成本","col.currentValue":"现值","col.gain":"盈亏",
     "col.notes":"备注","col.amount":"金额","col.limit":"上限","col.type":"类型",
     "col.date":"日期","col.event":"事件","col.importance":"重要性",
     "budget.monthlyCashFlow":"每月现金流","budget.cashIn":"现金流入","budget.cashOut":"现金流出",
@@ -2335,6 +2382,7 @@ const CHROME_MAP={
   hLedgerAssets:"ledger.assets",thAssetItem:"col.item",thAssetCat:"col.category",
   thAssetValue:"col.value",thAssetNotes:"col.notes",lblAssetTotal:"ov.totalAssets",
   thAssetTicker:"col.ticker",thAssetShares:"col.shares",thAssetPrice:"col.price",
+  thAssetCost:"col.costBasis",thAssetGain:"col.gain",
   hLedgerLiab:"ledger.liabilities",thLiabItem:"col.item",thLiabCat:"col.category",
   thLiabBalance:"col.balance",thLiabNotes:"col.notes",lblLiabTotal:"ov.totalLiab",
   lblLedgerNetWorth:"ov.netWorth",
@@ -2544,14 +2592,52 @@ function renderLedger(){
   const ab=document.getElementById("assetBody");
   document.getElementById("assetTable").classList.toggle("quotes-on",quotesOn());
   ab.innerHTML=state.assets.length?state.assets.map(a=>rowHTML(a,catsFor().assets,"asset")).join(""):
-    `<tr><td colspan="8"><div class="empty">No assets yet. Hit <b>+ Add asset</b> to log your first account.</div></td></tr>`;
+    `<tr><td colspan="10"><div class="empty">No assets yet. Hit <b>+ Add asset</b> to log your first account.</div></td></tr>`;
   const lb=document.getElementById("liabBody");
   lb.innerHTML=state.liabilities.length?state.liabilities.map(a=>rowHTML(a,catsFor().liab,"liab")).join(""):
     `<tr><td colspan="5"><div class="empty">No liabilities logged. That's a good place to be — add one only if you owe it.</div></td></tr>`;
   document.getElementById("assetTotal").textContent=fmt2(totalAssets());
   document.getElementById("liabTotal").textContent=fmt2(totalLiab());
   document.getElementById("ledgerNet").textContent=fmt(netWorth());
+  // With quotes on, Value IS the current value of a position (shares x last price), so the
+  // header says so rather than adding a second column showing the same number.
+  // applyChromeI18n() resets this to col.value; every path that can show the ledger lands here.
+  document.getElementById("thAssetValue").textContent=t(quotesOn()?"col.currentValue":"col.value");
+  updateGainFooter();
   wireCells();
+}
+const costText=a=>(+a.costBasis>0)?toDisplay(a.costBasis):"";
+function gainCellHTML(item){
+  const g=rowGain(item);
+  if(!g)return `<span class="gain-none">—</span>`;
+  const txt=gainText(g.amount,g.pct), other=gainMode()==="pct"?"an amount":"a percentage";
+  return `<button type="button" class="gain-btn ${gainClass(g.amount)}" data-gain title="Click to show gains as ${other}" aria-label="Gain ${esc(txt)}. Show gains as ${other}.">${esc(txt)}</button>`;
+}
+// Total over the rows that HAVE a gain. In percent mode it is total gain over total cost of those
+// rows — averaging the row percentages would weight a 10-share position like a 1,000-share one.
+function updateGainFooter(){
+  const el=document.getElementById("assetGainTotal");
+  if(!el)return;
+  let amount=0,cost=0,n=0;
+  state.assets.forEach(a=>{const g=rowGain(a);if(g){amount+=g.amount;cost+=g.cost;n++;}});
+  el.textContent=n?gainText(amount,cost>0?amount/cost*100:0):"—";
+  el.className="num tnum q-col "+(n?gainClass(amount):"");
+}
+// Repaint every Gain cell without rebuilding the table. keepId re-focuses that row's button,
+// since the click that flipped the mode replaced the button it came from.
+function repaintGains(keepId){
+  document.querySelectorAll("#assetBody tr[data-id]").forEach(tr=>{
+    const item=state.assets.find(x=>x.id===tr.dataset.id), td=tr.querySelector("[data-qgain]");
+    if(item&&td)td.innerHTML=gainCellHTML(item);
+    if(keepId&&tr.dataset.id===keepId){const b=tr.querySelector("[data-gain]");if(b)b.focus();}
+  });
+  updateGainFooter();
+}
+// One mode for the whole column: a column mixing amounts and percentages is hard to read.
+function toggleGainMode(keepId){
+  state.quotes.gainMode=gainMode()==="pct"?"amount":"pct";
+  save();
+  repaintGains(keepId);
 }
 const DERIVED_TITLE="Shares × last price. Clear the ticker to type a value yourself.";
 // Share counts are not money: they must not round-trip through toDisplay()/fromDisplay(), which
@@ -2575,12 +2661,15 @@ function rowHTML(item,cats,kind){
   const qCells=kind==="asset"?`
     <td class="q-col">${cellInput(item.ticker||"","","",'data-f="ticker" maxlength="12" autocapitalize="characters" autocomplete="off" spellcheck="false" aria-label="Ticker symbol"')}</td>
     <td class="q-col">${cellInput(sharesText(item.shares),"num","",'data-f="shares" inputmode="decimal" aria-label="Shares"')}</td>
+    <td class="q-col">${cellInput(costText(item),"num","",'data-f="costBasis" inputmode="decimal" aria-label="Cost basis per share" title="Your average cost per share"')}</td>
     <td class="q-col q-price tnum" data-qprice>${priceCellHTML(item)}</td>`:"";
+  const gCell=kind==="asset"?`
+    <td class="q-col q-gain" data-qgain>${gainCellHTML(item)}</td>`:"";
   const ro=kind==="asset"&&valueDerived(item)?` readonly title="${esc(DERIVED_TITLE)}"`:"";
   return `<tr data-id="${esc(item.id)}" data-kind="${esc(kind)}">
     <td>${cellInput(item.name,"","name",'data-f="name"')}</td>
     <td><select class="cell" data-f="cat">${opts}</select></td>${qCells}
-    <td>${cellInput(toDisplay(item.value),"num",'',`data-f="value" inputmode="decimal"`+ro)}</td>
+    <td>${cellInput(toDisplay(item.value),"num",'',`data-f="value" inputmode="decimal"`+ro)}</td>${gCell}
     <td>${cellInput(item.notes,"","","data-f=\"notes\"")}</td>
     <td><button class="del" title="Delete row" aria-label="Delete row">✕</button></td></tr>`;
 }
@@ -2601,6 +2690,9 @@ function wireCells(){
         if(d)v.title=DERIVED_TITLE;else v.removeAttribute("title");
         v.value=toDisplay(item.value);
       }
+      const gc=tr.querySelector("[data-qgain]");
+      if(gc)gc.innerHTML=gainCellHTML(item);
+      updateGainFooter();
     };
     tr.querySelectorAll("[data-f]").forEach(el=>{
       const f=el.dataset.f;
@@ -2625,6 +2717,17 @@ function wireCells(){
           }
           item.shares=n;
           if(valueDerived(item)){item.value=n*item.price;state.updated=today();}
+          syncQuoteCells();
+        }else if(f==="costBasis"){
+          // Money, so it goes through fromDisplay() and is stored in USD. Unlike Value, an
+          // emptied cell is a legitimate "not set", not a mistake to be reverted.
+          const raw=el.value.trim(), n=raw===""?0:fromDisplay(raw);
+          if(n==null||n<0){
+            el.value=costText(item);
+            toast("That isn't a price — kept the previous cost basis.");
+            return;
+          }
+          item.costBasis=n;
           syncQuoteCells();
         }else if(f==="value"){
           if(valueDerived(item)){el.value=toDisplay(item.value);return;}
@@ -5971,10 +6074,18 @@ function init(){
   });
   document.getElementById("archFile").addEventListener("change",e=>{if(e.target.files[0])loadArchive(e.target.files[0]);e.target.value="";});
 
+  // Gain cells are rebuilt on every repaint, so the click is delegated to the tbody, which is not.
+  document.getElementById("assetBody").addEventListener("click",e=>{
+    const b=e.target.closest("[data-gain]");
+    if(!b)return;
+    const tr=b.closest("tr[data-id]");
+    toggleGainMode(tr?tr.dataset.id:null);
+  });
+
   // add rows
   document.querySelectorAll("[data-add]").forEach(btn=>btn.addEventListener("click",()=>{
     const k=btn.dataset.add;
-    if(k==="asset"){state.assets.push({id:uid(),name:"",cat:catsFor().defaults.asset,value:0,notes:"",ticker:"",shares:0,price:null,priceAt:""});save();renderLedger();}
+    if(k==="asset"){state.assets.push({id:uid(),name:"",cat:catsFor().defaults.asset,value:0,notes:"",ticker:"",shares:0,price:null,priceAt:"",costBasis:0});save();renderLedger();}
     if(k==="liab"){state.liabilities.push({id:uid(),name:"",cat:catsFor().defaults.liab,value:0,notes:""});save();renderLedger();}
     if(k==="cal"){state.calendar.push({id:uid(),date:today(),event:"",imp:"Med",notes:""});save();renderCalendar();}
     if(k==="goal"){state.goals.push({id:uid(),name:"",target:0,targetDate:"",fundedBy:"",monthly:0});save();renderGoals();}
