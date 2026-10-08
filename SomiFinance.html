@@ -34,7 +34,7 @@
 -->
 <meta http-equiv="Content-Security-Policy" content="
   default-src 'none';
-  script-src 'sha256-LEfI6wtiATeJWC0ehfYamH0fHWvD5leT9b99SJsRVXU=' 'sha256-PonhvMMTh+QH3R+kps86MrwYf6vE3c8Ucy7VE8b/y7A=';
+  script-src 'sha256-LEfI6wtiATeJWC0ehfYamH0fHWvD5leT9b99SJsRVXU=' 'sha256-EKDEjN0T2ZI8TgO7Ct590qEICxrrl534TqVZs8HrP0o=';
   style-src 'unsafe-inline';
   img-src data: https:;
   connect-src https://home.treasury.gov https://api.bls.gov https://open.er-api.com http://127.0.0.1:* http://localhost:*;
@@ -1850,6 +1850,19 @@ const quotesOn=()=>!!(state&&state.quotes&&state.quotes.enabled===true);
 // A row whose Value is computed rather than typed. All three parts are needed: without a price
 // or a share count there is nothing to compute, and the cell must stay editable.
 const valueDerived=a=>quotesOn()&&!!a.ticker&&a.price!=null&&(+a.shares>0);
+// The ONE place a derived Value is written. It used to be spelled out separately in the Shares
+// handler and in refreshQuotes(), and nothing ran it when quotes were switched back on — so a
+// value typed while they were off sat in a read-only cell labelled "Shares × last price" that
+// it did not equal, next to a Gain that was computed from the real figure.
+// Returns whether the row is derived, so a caller can tell a revalued row from a typed one.
+function revalue(a){
+  if(!valueDerived(a))return false;
+  a.value=a.shares*a.price;
+  return true;
+}
+// Priced, but with nothing to multiply: the typed Value stands, and the row says what it lacks
+// rather than showing a fresh price beside a figure that silently did not move.
+const needsShares=a=>quotesOn()&&!!a.ticker&&a.price!=null&&!(+a.shares>0);
 // Gain on a stock position, from the user's average cost PER SHARE. USD like every figure;
 // null when any of ticker, shares, cost basis or price is missing, so the cell shows a dash
 // rather than a gain computed against zero. Nothing here is ever sent anywhere.
@@ -2612,6 +2625,7 @@ function renderLedger(){
 const costText=a=>(+a.costBasis>0)?toDisplay(a.costBasis):"";
 function gainCellHTML(item){
   const g=rowGain(item);
+  if(needsShares(item))return `<span class="gain-none" title="This row has a price but no share count, so its value is still the one you typed.">add shares</span>`;
   if(!g)return `<span class="gain-none">—</span>`;
   const txt=gainText(g.amount,g.pct), other=gainMode()==="pct"?"an amount":"a percentage";
   return `<button type="button" class="gain-btn ${gainClass(g.amount)}" data-gain title="Click to show gains as ${other}" aria-label="Gain ${esc(txt)}. Show gains as ${other}.">${esc(txt)}</button>`;
@@ -2719,7 +2733,7 @@ function wireCells(){
             return;
           }
           item.shares=n;
-          if(valueDerived(item)){item.value=n*item.price;state.updated=today();}
+          if(revalue(item))state.updated=today();
           syncQuoteCells();
         }else if(f==="costBasis"){
           // Money, so it goes through fromDisplay() and is stored in USD. Unlike Value, an
@@ -3334,14 +3348,14 @@ async function refreshQuotes(auto){
   // Another await has passed: the feature may have been switched off, or state replaced by an
   // import. Re-check, and read rows from live state rather than anything captured above.
   if(!quotesOn()){done_();return false;}
-  let updated=0;const missed=[];
+  let updated=0,unvalued=0;const missed=[];
   state.assets.forEach(a=>{
     if(!a.ticker)return;
     const q=by[a.ticker], usd=q?quoteToUSD(q.price,q.ccy):null;
     if(usd==null){if(!missed.includes(a.ticker))missed.push(a.ticker);return;}
     a.price=usd;a.priceAt=q.asOf;
     if(!String(a.name||"").trim()&&q.name)a.name=q.name;   // never overwrite a label the user typed
-    if(+a.shares>0)a.value=a.shares*usd;
+    if(!revalue(a))unvalued++;
     updated++;
   });
   if(updated){
@@ -3352,8 +3366,11 @@ async function refreshQuotes(auto){
   }
   renderTab(currentTab);renderTape();renderQuotesList();
   done_();
-  if(updated&&!missed.length){if(!auto)toast("Updated "+updated+" position"+(updated===1?"":"s")+" from Yahoo Finance.");}
-  else if(updated)toastErr("Updated "+updated+" position"+(updated===1?"":"s")+". No usable quote for: "+missed.join(", ")+".");
+  // A priced row without shares keeps its typed Value. Say so here, or the fresh Price beside an
+  // unmoved Value reads as a failed refresh.
+  const noShares=unvalued?" "+unvalued+(unvalued===1?" row has":" rows have")+" no share count, so "+(unvalued===1?"its":"their")+" value was not changed.":"";
+  if(updated&&!missed.length){if(!auto)toast("Updated "+updated+" price"+(updated===1?"":"s")+" from Yahoo Finance."+noShares);}
+  else if(updated)toastErr("Updated "+updated+" price"+(updated===1?"":"s")+". No usable quote for: "+missed.join(", ")+"."+noShares);
   else if(!auto)toastErr("No usable quote came back for: "+missed.join(", ")+". Check the symbols.");
   return updated>0;
 }
@@ -3891,9 +3908,11 @@ function renderQuotesList(){
 // Sole writer of state.quotes.enabled besides sanitizeState() and importJSON()'s forced off.
 function setQuotesEnabled(on){
   state.quotes.enabled=on===true;
+  if(on)state.assets.forEach(revalue);   // a value typed while quotes were off must not outlive them
   save();
   renderQuotesList();setSectionCurrent();renderFoot();
   renderLedger();   // shows or hides the three columns, and re-locks or frees the Value cells
+  renderTape();     // turning quotes on can revalue rows, and the tape carries net worth
   document.getElementById("refreshBtn").title=refreshTitle(currentTab);
   toast(on?"Stock quotes on — add a ticker and shares in Assets & Liabilities, then Refresh."
           :"Stock quotes off. Your tickers and share counts are kept, and nothing is sent.");
