@@ -24,6 +24,16 @@ wealth-desk-*.json
 *.local.html
 *.bak
 
+# Local worker agent: per-user working files. The vanilla template in local-worker-agent/
+# (SKILL.md, scripts/local-exec.sh, Modelfile.example, local-worker-setup.md) stays tracked;
+# each user installs a copy and customizes that copy.
+.claude/skills/local-worker-agent/
+.claude/local-exec.log
+Modelfile
+/PLAN.md
+/PLAN.fix-*.md
+/scratch/
+
 # The real seed data build.py projects into SomiFinancePersonal.html. The *personal*.html rules
 # above are .html-only and would NOT catch this, so it needs its own line.
 personal.variant.json
