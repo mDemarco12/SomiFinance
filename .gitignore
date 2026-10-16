@@ -28,10 +28,10 @@ wealth-desk-*.json
 # (SKILL.md, scripts/local-exec.sh, Modelfile.example, local-worker-setup.md) stays tracked;
 # each user installs a copy and customizes that copy.
 .claude/skills/local-worker-agent/
-.claude/local-exec.log
+.claude/local-exec*.log
 Modelfile
 /PLAN.md
-/PLAN.fix-*.md
+/PLAN.*.md
 /scratch/
 
 # The real seed data build.py projects into SomiFinancePersonal.html. The *personal*.html rules

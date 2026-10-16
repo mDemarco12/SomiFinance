@@ -32,6 +32,8 @@ Plan file: $ARGUMENTS (use PLAN.md if empty).
    b. Re-run every step's check command yourself. Do not trust the worker's CHECK RESULTS;
       compare them with what you got.
    c. Apply the project rules in the "Local worker" section of CLAUDE.md, if there is one.
+      Never read the files the script's DENY list protects (real-data files). Unlike the
+      worker, you are not local, so reading them would send their contents off this machine.
    d. Give each plan step one verdict:
       - ACCEPT: done as planned, and its check passed when you ran it
       - REJECT: missing, wrong, or its check failed (say why)

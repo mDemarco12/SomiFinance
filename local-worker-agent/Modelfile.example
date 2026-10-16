@@ -1,4 +1,5 @@
-# Template. Copy to ./Modelfile (git-ignored), then: ollama create qwen3-coder-32k -f Modelfile
+# Template. Copy to ./Modelfile (git-ignored), then: ollama create qwen3.5-9b-32k -f Modelfile
 # FROM must name a model already in `ollama list`. Pull it yourself first; the worker never pulls.
-FROM qwen3-coder:30b
+# Lighter fallback: FROM granite4.2:8b, then: ollama create granite4.2-8b-32k -f Modelfile
+FROM qwen3.5:9b
 PARAMETER num_ctx 32768
