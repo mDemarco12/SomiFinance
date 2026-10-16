@@ -2,15 +2,15 @@
 
 > **Maintenance rule:** this doc is scanned by agents working on this project. Track it with `Scan count` below — increment it by 1 every time this doc is read for context. **On every 4th scan** (count reaches a multiple of 4), lint the whole doc against the current state of `SomiFinanceDemo.html` before doing anything else: move shipped items out of "Could be done," delete resolved "Needs polish" / "Rebrand to-do" items, add anything newly true. Don't let this drift from the actual code.
 >
-> **Scan count:** 6 (quarterly archive — encrypted append-only audit record, see **Security posture** and **Done**; previously: full doc lint against the code — goal-aware categories, reset, name colour, fluid sizing, TradingView re-theme fix; previously: three-build split — `build.py`, per-build storage keys, empty-ledger end-user build; previously: security pass — CSP, sandboxed TradingView frame, `sanitizeState()`, genericized seed, history purge; see **Security posture** below)
+> **Scan count:** 9 (stock quotes — opt-in Yahoo Finance prices through a loopback helper, see **Stock quotes** under Security posture and Done; previously: pre-launch polish pass — 46 items in six commits, linted against the code on this scan per the rule above; see **Pre-launch polish** under Done; previously: GTM hardening pass — three-reviewer audit, 25 fixes, full-app QA suite; see **GTM hardening** under Done; previously: quarterly archive — encrypted append-only audit record, see **Security posture** and **Done**; previously: full doc lint against the code — goal-aware categories, reset, name colour, fluid sizing, TradingView re-theme fix; previously: three-build split — `build.py`, per-build storage keys, empty-ledger end-user build; previously: security pass — CSP, sandboxed TradingView frame, `sanitizeState()`, genericized seed, history purge; see **Security posture** below)
 >
 > **Anchor style:** reference code by **symbol name** (`renderBudget()`, `#tvBox`, `THEMES`) — never by line number. A previous version used `file#L123` links and all 26 went stale the moment Chart.js was inlined. Symbol names stay greppable across edits.
 
 ## Snapshot
 
 - **What it is:** a single-file, offline-first personal net-worth & macro dashboard. Vanilla HTML/CSS/JS, no bundler, no backend. Persists to `localStorage`. There is one build step, and it is not a compiler: `build.py` projects the source into the other two builds (see **Three builds** below). Every output is still a standalone single file that runs by double-clicking it.
-- **Genuinely offline on load.** Chart.js v4.4.1 is **inlined** into the file (~205 KB minified, 13 lines, MIT banner preserved, `sourceMappingURL` stripped) — no CDN tag, and the page's own two script blocks are both inline. Opening the page fires **zero** network requests **by default** (auto-refresh ships `off` — see Macro Signals). Only three things ever reach out, all user-triggered: the TradingView widget on first Economic Calendar view, the Treasury/BLS fetches on Refresh from Macro Signals, and the FX-rate fetch when a non-USD currency is selected. The single remaining third-party `script src` is TradingView's, and it lives inside the sandboxed frame's `srcdoc`, never in this document — see **Security posture**. Don't "optimize" Chart.js back to a CDN — inlining is deliberate (it also removes an unpinned-CDN supply-chain path, since the old tag had no SRI hash).
-- **File:** `SomiFinanceDemo.html` (~4540 lines / ~455 KB, one file — markup, styles, and script all inline; ~200 KB of that is the inlined Chart.js, so hand-written code is ~255 KB). The quarterly archive added ~550 lines.
+- **Genuinely offline on load.** Chart.js v4.4.1 is **inlined** into the file (~205 KB minified, 13 lines, MIT banner preserved and `@kurkle/color`'s alongside it, `sourceMappingURL` stripped). **Never dump those lines** — they will swamp a context window. Find them by LENGTH rather than by line number, which moves with every edit: `awk 'length($0)>2000 {print NR}'` prints exactly the two that matter, and `awk 'length($0)<2000'` filters them out of any grep — no CDN tag, and the page's own two script blocks are both inline. Opening the page fires **zero** network requests **by default** (auto-refresh ships `off` — see Macro Signals). Only three things ever reach out, all user-triggered: the TradingView widget on first Economic Calendar view, the Treasury/BLS fetches on Refresh from Macro Signals, and the FX-rate fetch when a non-USD currency is selected. `script-src` runs no third-party script at all — the TradingView calendar is a sandboxed frame pointed directly at TradingView's own embed URL, never a loader executing in this document — see **Security posture**. Don't "optimize" Chart.js back to a CDN — inlining is deliberate (it also removes an unpinned-CDN supply-chain path, since the old tag had no SRI hash).
+- **File:** `SomiFinanceDemo.html` (~5627 lines / ~528 KB, one file — markup, styles, and script all inline; ~200 KB of that is the inlined Chart.js, so hand-written code is ~255 KB). The quarterly archive added ~550 lines.
 - **Three builds, one source.** `SomiFinanceDemo.html` is the **only file anyone edits**. `build.py` projects it into the other two. Never hand-edit a generated file — it carries a DO-NOT-EDIT banner and the next build silently overwrites it.
 
   | File | What it is | Git |
@@ -103,29 +103,78 @@ Both exist because the connection UI was originally split across two surfaces an
   that mutate connection state — both the panel and the ⚙ section call them rather than carrying
   their own copies.
 
-### The TradingView widget is sandboxed — never add `allow-same-origin`
+### The TradingView widget runs no third-party script — never add `allow-same-origin`
 
-`ensureTradingViewWidget()` puts the third-party loader inside a `srcdoc` iframe with
-`sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox"`. Omitting `allow-same-origin`
-is the entire mitigation: it gives the frame an **opaque origin**, so TradingView's unpinned,
-unhashable script cannot read `localStorage["somifinance.v1"]` (every holding, value and note) or
-touch this document. Appended directly to `#tvBox` — as it was originally — it had all of that.
+`ensureTradingViewWidget()` points a sandboxed iframe straight at TradingView's embed URL —
+`https://www.tradingview.com/embed-widget/events/?locale=en#<config>`, config as a percent-encoded
+JSON fragment — with `sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox"` and no
+`allow-same-origin`. It used to run TradingView's own loader script
+(`embed-widget-events.js`) inside a `srcdoc` frame instead; that loader is gone.
 
-**Adding `allow-same-origin` to a srcdoc frame makes it inherit *this* document's origin**, handing
-back exactly the access the sandbox removes. Don't, even if the widget misbehaves. If it degrades
-under the opaque origin, the fallback is to drop the loader entirely and point the iframe at
-TradingView's embed URL directly (`https://www.tradingview.com/embed-widget/events/?locale=en#<config>`),
-which removes third-party script execution altogether and needs only a `frame-src` entry.
+Two reasons it's gone, not just sandboxed differently. First, security: a `srcdoc` frame inherits
+this document's origin unless `allow-same-origin` is withheld, so hosting unpinned, unhashable
+third-party script there depended entirely on that one flag never being added — omitting it is
+still no `allow-same-origin`, ever, same as before, but there is no longer a loader script to
+mitigate in the first place. Second, and what actually forced the change: TradingView's loader
+started building its widget frame on `www.tradingview-widget.com`, a host our `frame-src` doesn't
+allow. The loader caught its own CSP violation and silently retried on `s.tradingview.com` — but
+with **no config applied**, falling back to their defaults (`colorTheme:"light"`,
+`isTransparent:false`), and it was invisible in the console because the loader's fallback swallowed
+the failure. Building the frame's `src` ourselves removes the loader, and with it any code path
+that can silently drop the theme.
 
-A srcdoc frame **inherits the parent CSP**, which is why `script-src` lists `s3.tradingview.com` and
-`frame-src` lists TradingView's frame origins. Consequence: if their loader ever starts writing
-inline script, our hash-only `script-src` will block it — that is the expected failure mode, not a
-bug to fix by loosening the policy.
+That config loss was real and worth fixing, but note what it was *not*: it was **not** the cause of
+the white box everyone kept reporting. See the `color-scheme` note below before assuming otherwise
+— fixing the loader did not change the white box at all.
 
-Because the widget now lives in a frame, TradingView's `height:100%` clobber lands on a div inside
-*its* document, not on `#tvBox`. The `#tvBox{…!important}` rule is therefore belt-and-braces now
-rather than load-bearing — but keep it, and keep `setLiveCalPx()` as the sole writer of
-`--live-cal-h`. Never set `tvBox.style.height` directly.
+`script-src` no longer lists a TradingView host — we execute none of their script anywhere in this
+document. `frame-src` lists only `www.tradingview.com`; `s.tradingview.com` is no longer used. The
+frame is a network-scheme navigation to TradingView's own page, so it carries **their** CSP, not
+ours — ours only decides whether we're allowed to frame it. If TradingView's embed page ever starts
+requiring something incompatible with the sandbox flags above, the fix is a sandbox flag, not
+`allow-same-origin`.
+
+#### `#tvFrame{color-scheme:light}` is what stops the widget painting white — never remove it
+
+This is the third time "the live calendar is a white box with unreadable text" has been filed, and
+the first two fixes were aimed at the wrong thing. Record straight so it isn't re-litigated:
+
+- **The loader removal above did not cause the white box, and did not fix it.** TradingView's
+  loader silently dropping our config was a separate, real bug, worth fixing on its own.
+- **The white box was always a `color-scheme` mismatch.** `applyTheme()` sets
+  `root.style.colorScheme` so the browser's own scrollbars, caret and date pickers follow the
+  theme. `color-scheme` **inherits**, so under any dark theme `#tvFrame` resolved to `dark`.
+  TradingView's embed document declares no `color-scheme` at all — not in its HTML, not in any of
+  the 25 CSS bundles it loads — so it resolves to light. **Chrome will not composite an iframe
+  transparently when the embedder and the embedded document disagree**: it paints an opaque canvas
+  from the *embedded* document's scheme, which is white. `isTransparent:true` was working the whole
+  time — `.tv-embed-widget-wrapper__body` really was `rgba(0,0,0,0)` — it was just revealing that
+  white canvas instead of `--panel`, with TradingView's *dark* text tokens (`#dbdbdb` / `#8c8c8c`)
+  sitting on top of it. That mismatch is the entire bug.
+
+Pinning the frame to `light` makes the two agree, so the canvas stays transparent and the panel
+shows through. A static value is correct for both polarities: TradingView's declared scheme does
+not change with `colorTheme`, and under Latte the root is already `light`.
+
+Do not "fix" a future recurrence by reaching for `isTransparent:false`. That makes TradingView
+paint its own `#1f1f1f`, which can never be white but also never matches `--panel` — a visibly
+lighter inset rectangle instead of one continuous surface.
+
+The diagnostic that settles this in seconds, with the calendar open: read
+`getComputedStyle(document.getElementById('tvFrame')).colorScheme`. If it is anything but `light`,
+that is the bug. Note that the DOM *inside* the frame looks perfectly correct while this is broken
+(`<html class="theme-dark is-transparent">`, transparent computed backgrounds), so inspecting the
+frame's own document will tell you everything is fine. Trust the rendered pixels over that.
+
+Related: `.tv-ph` is removed on the frame's `load` event rather than being painted over. Relying on
+it being covered only ever worked because of the white canvas; with a genuinely transparent frame
+the placeholder bleeds through the widget.
+
+TradingView's `height:100%` clobber, when it happened, landed on a div inside *its* document, not
+on `#tvBox` — true again now, for the same reason (the widget's own container never was `#tvBox`
+once it moved into a frame). The `#tvBox{…!important}` rule stays belt-and-braces rather than
+load-bearing; keep it, and keep `setLiveCalPx()` as the sole writer of `--live-cal-h`. Never set
+`tvBox.style.height` directly.
 
 ### The quarterly archive — an audit record, not a backup; the passphrase is the only secret
 
@@ -165,6 +214,47 @@ it didn't carry. Every archived string renders outside `cellInput()`, so every o
 `showArchiveDialog()`'s Escape handler is named `onEsc`, not `esc`: `showResetConfirm()`'s is
 called `esc`, which shadows the global escaper for that whole function body.
 
+### Stock quotes — opt-in, symbols only, through a loopback helper
+
+⚙ → **Stock quotes** lets an asset row carry a `ticker` and `shares` and pulls the stock name and
+last price from Yahoo Finance. Six things here are load-bearing:
+
+- **The page never talks to Yahoo.** Yahoo's endpoints are not CORS-open (see Key facts), so
+  `quotes.py` — standard library only, tracked in the repo — runs on the user's machine, asks
+  Yahoo, and answers on `127.0.0.1:8765`. `connect-src` already allowed loopback for the
+  assistant, so **no remote host was added to the CSP**. Don't "simplify" this to a public CORS
+  proxy: a third party would then see the holdings list.
+- **Only ticker symbols leave the machine.** `fetchQuotes()` sends the symbol list and nothing
+  else; value is computed locally as `shares × price` and written into the row's existing `value`,
+  which is why no total, chart, goal, snapshot or archive code changed. The helper logs that a
+  request happened, never which symbols.
+- **Off by default, and consent can't arrive in a file.** `state.quotes.enabled` is `false` in
+  every build. `setQuotesEnabled()` is its only writer besides `sanitizeState()`, and the only
+  route to `true` is `showQuotesConsent()`, shown on every off→on with no stored "already agreed"
+  flag. `importJSON()` forces it back to `false` and says so in its toast.
+- **The gate is at the action.** `quotesOn()` is re-checked inside `fetchQuotes()` and
+  `refreshQuotes()`, and again after each `await` — same lesson as `loadExampleData()`. With the
+  feature off the Ticker/Shares/Price columns are hidden by CSS (`#assetTable:not(.quotes-on)
+  .q-col`), every Value cell is editable, and stored tickers/shares are kept, not deleted.
+- **The helper address has the assistant's second lock.** `state.quotes.endpoint` is user- and
+  import-editable, so it is regexed through `CHAT_LOOPBACK` in `sanitizeState()`,
+  `normalizeAddons()`, the ⚙ input and `fetchQuotes()`. `quotes.py` in turn serves one path,
+  validates symbols against the page's own `TICKER_RE`, caps them at 50, rejects a non-loopback
+  `Host`, sends a CORS header only to `null`/loopback origins, follows no redirects, and answers
+  at most 20 requests a minute — it is not a proxy. It is unauthenticated, and whatever listens on
+  that port receives the symbol list: see SECURITY.md for the limits that are accepted.
+- **Refresh on the Ledger is the only trigger.** `maybeAutoRefresh()` deliberately does not call
+  `refreshQuotes()`. A fetch on page load would make the consent dialog's "only when you press
+  Refresh" false. Don't wire quotes into auto-refresh without changing that dialog first.
+
+Fetched fields are coerced exactly like an import (`sTicker`/`sNumN`/`sStr`/`sDateN`) before they
+touch state. A fetched name fills `name` only when the user left it blank. Non-USD listings are
+converted with `state.fx.rates` (`quoteToUSD()`, including London's pence `GBp`); a currency
+outside `CURRENCIES` leaves the row untouched and is reported. `build.py`'s `STRUCTURAL_LEAKS`
+aborts any tracked build that seeds a row with its symbol field filled in, so the demo stays
+symbol-free. Yahoo has no official API — if prices stop arriving, `fetch_one()` in `quotes.py` is
+the one place to fix.
+
 ### `sanitizeState()` is the only door into `state`
 
 Called by **both** `load()` and `importJSON()`. It builds a fresh state by **explicit field copy from
@@ -180,7 +270,10 @@ a whitelist** — it is not `Object.assign(seed(), d)`, and must never go back t
   Safe because `calendarOrder` holds panel names, not ids, and budget order is array order, so no id
   crosses a save boundary.
 - Helpers: `sStr` (length-capped), `sNum` / `sNumN` (`Number.isFinite`, so `NaN`/`Infinity`/`"1e999"`
-  can't through), `sArr` (`MAX_ROWS`), `sPick` (allowlist), `sDate` (`YYYY-MM-DD` shape).
+  can't through), `sArr` (`MAX_ROWS`, keeps the FIRST rows — for row lists), `sTail` (sorts by
+  date and keeps the NEWEST `MAX_ROWS` — for `history`/`yields`/`inflation`; `capTail()` does the
+  same at push time), `sPick` (allowlist), `sDate` (`YYYY-MM-DD` shape), `own()` (own-property
+  test for every allowlist lookup — a bare `TABLE[key]` is truthy for `"constructor"`).
   `MAX_STR`=200, `MAX_ROWS`=1000.
 - `cat` is deliberately a free string, not a `CAT_SETS` allowlist — the Overview allocation panel
   is documented to render whatever category an asset carries, and `colorForCat()` handles unknown
@@ -242,6 +335,8 @@ so a same-morning refresh legitimately returns the prior business day.
 - Inline-editable tables — click any cell, category dropdown, notes field (`renderLedger()` / `rowHTML()` / `wireCells()`)
 - Asset categories come from the active goal's `CAT_SETS` entry (personal: 13, including a catch-all **"Alternative Asset"**; business: 10) — there's no in-app category management (add/rename) anymore; to track something odd (a wine cellar, a pet, a jean collection), add an asset in the Ledger, name the asset itself whatever you want, and assign it the "Alternative Asset" category. It then appears in the Overview allocation automatically since that panel groups by whatever category real assets carry, not by a separate managed list.
 - Add/delete rows, live-updating totals and net worth strip
+- **Optional stock positions** (off by default): with ⚙ → Stock quotes on, the assets table gains Ticker, Shares and a read-only Price column, and Refresh on this tab pulls prices (`refreshQuotes()`). A row with ticker + shares + price has a computed, read-only Value (`valueDerived()`); `syncQuoteCells()` repaints one row in place so tabbing between cells keeps focus. Share counts go through `parseShares()`, never `fromDisplay()` — they are not money and must not be FX-converted. See **Stock quotes** under Security posture.
+- **Cost basis and gain** (same switch): a **Cost basis** column holds the user's average cost *per share* (`costBasis`, USD, 0 = not set; typed through `fromDisplay()` because it is money), the Value header reads **Current value** while quotes are on (`renderLedger()` sets it — it is the same number, not a second column), and a **Gain** column shows `(price − costBasis) × shares`. Clicking a Gain cell flips the **whole column** between an amount and a one-decimal percentage (`toggleGainMode()`, persisted in `state.quotes.gainMode`). `rowGain()` returns `null` unless ticker, shares, cost basis and price are all present, so the cell shows a dash rather than a gain against zero. The footer totals rows that have a gain; in percent mode it is total gain ÷ total cost, never an average of row percentages. Gain cells are rebuilt on every repaint, so their click is **delegated to `#assetBody`** in `init()` — don't wire it per button. Nothing here is sent anywhere.
 - **Empty state on the assets table** mirroring the liabilities one — `renderLedger()` used to map an empty array into bare table headers. Also covers a user who deletes their last row.
 
 **Budgeting tab** (shortcut `3`, between Ledger and Macro)
@@ -261,12 +356,12 @@ so a same-morning refresh legitimately returns the prior business day.
 **Economic Calendar tab**
 - Two panels, `data-panel="personal"` and `data-panel="live"`: the editable **Personal economic calendar** and the read-only **Live economic calendar**.
 - Editable dated events, importance tags (High/Med/Low/Personal), auto-sorts by date, past events greyed out (`renderCalendar()`)
-- **Live reference widget**: a second panel embeds TradingView's official Economic Calendar widget (`embed-widget-events.js`, US-filtered) (`#tvBox`) — read-only, not saved to `state`, sits alongside the editable table rather than replacing it.
+- **Live reference widget**: a second panel embeds TradingView's official Economic Calendar via a sandboxed iframe pointed directly at their embed URL (US-filtered) (`#tvBox`) — read-only, not saved to `state`, sits alongside the editable table rather than replacing it. No TradingView script runs in this document; see **Security posture**.
 - **The live panel is user-resizable** via a hollow-triangle corner grip (`#tvResize`, `initLiveCalResize()`), persisted in `state.liveCalHeight` (clamped 260–1600 by `clampLiveCal()`). Uses **pointer events with `setPointerCapture`**, not mouse events — the cross-origin TradingView iframe swallows `mousemove` the instant the cursor crosses into it mid-drag. Arrow keys on the focused grip nudge ±20 (±60 with Shift).
-- **`#tvBox` height is pinned by an `!important` rule reading `--live-cal-h`, and `setLiveCalPx()` is the only writer.** This is load-bearing and non-obvious: the TradingView embed script writes a plain `height:100%` onto its own container (which *is* `#tvBox`) a few ms after the async script lands, silently clobbering the saved height and collapsing the box to ~150px. A normal author `!important` beats TradingView's non-important inline style. Consequence: **never set `tvBox.style.height` directly** — the `!important` rule would ignore it and the drag would appear frozen. Confirmed via MutationObserver; TradingView does not use `!important` itself.
+- **`#tvBox` height is pinned by an `!important` rule reading `--live-cal-h`, and `setLiveCalPx()` is the only writer.** Originally load-bearing because TradingView's loader script wrote a plain `height:100%` onto its own container (which *was* `#tvBox` at the time) and silently clobbered the saved height. Now belt-and-braces: the widget's container lives inside the iframe's own document, so any clobber lands there, not on `#tvBox`. Consequence unchanged: **never set `tvBox.style.height` directly** — the `!important` rule would ignore it and the drag would appear frozen.
 - **The live panel no longer auto-sizes to the personal panel.** A previous `syncCalendarWidgetHeight()` measured the personal panel and forced `#tvBox` to match, so deleting a row there shrank the live feed. Deleted deliberately — `applyLiveCalHeight()` reads saved state only and never touches the personal panel. Don't reintroduce a coupling here.
-- **The widget is lazy-loaded** by `ensureTradingViewWidget()` on first Calendar render — it is deliberately NOT a `<script>` in the markup, because that fired on every page load even for users who never opened the tab.
-- **It re-themes on a light/dark flip.** The guard is `tvTheme`, a sentinel holding the polarity currently on screen, not a plain loaded-once boolean (`tvColorTheme()` maps Latte → light, everything else → dark). `colorTheme` is baked into the widget config at injection and the opaque-origin frame is unreachable from our CSS, so rebuilding the frame is the only lever. Without it a widget first shown under a dark theme kept TradingView's pale-grey text after a switch to Latte and washed out completely against the light panel. **Dark→dark switches and ordinary re-renders still bail out** and never re-ping TradingView — only a polarity flip rebuilds. Clearing `#tvBox` leaves its inline `--live-cal-h` alone, so the user's saved height survives.
+- **The widget is lazy-loaded** by `ensureTradingViewWidget()` on first Calendar render — it is deliberately NOT built into the markup, because that fired on every page load even for users who never opened the tab.
+- **It re-themes on a light/dark flip.** The guard is `tvTheme`, a sentinel holding the polarity currently on screen, not a plain loaded-once boolean (`tvColorTheme()` maps Latte → light, everything else → dark). `colorTheme` is baked into the frame's `src` at injection and the opaque-origin frame is unreachable from our CSS, so rebuilding the frame is the only lever. Without it a widget first shown under a dark theme kept TradingView's pale-grey text after a switch to Latte and washed out completely against the light panel. **Dark→dark switches and ordinary re-renders still bail out** and never re-ping TradingView — only a polarity flip rebuilds. Clearing `#tvBox` leaves its inline `--live-cal-h` alone, so the user's saved height survives.
 - **`applyCalendarOrder()` early-returns when the DOM order already matches.** This is load-bearing, not a micro-optimization: `appendChild` on an existing child re-inserts it, and re-parenting an `<iframe>` makes the browser reload it. Without the guard the widget reloaded (and re-pinged TradingView) on *every* calendar render. An actual drag/click reorder still reloads it — unavoidable when moving a node in the DOM. Chosen after Bloomberg's and investing.com's calendar pages both returned HTTP 403 (confirmed active anti-bot blocking, and both prohibit scraping in their ToS) — TradingView's widget is an official no-key embed built for exactly this. Finnhub and Financial Modeling Prep were also confirmed CORS-open alternatives if structured (not embedded) calendar data is wanted later, but both need a free API key/signup; not pursued since the no-key widget covered the ask.
 
 **About tab** (shortcut `6`, last in the nav)
@@ -304,6 +399,111 @@ so a same-morning refresh legitimately returns the prior business day.
 - The table has `min-width:680px` inside an `overflow-x:auto` wrapper; without it a phone-width table wraps dates across two lines and clips the expanded row's figures.
 - QA: an end-to-end Playwright suite over `file://` (78 checks — tamper cases, build binding, whitelist, XSS file names, theme contrast, regressions) passed in Chrome, with Firefox and WebKit round-trip smoke tests and cross-engine file compatibility.
 
+**GTM hardening pass (pre-launch review)**
+Three reviewers (security/data-integrity, financial correctness, product polish + static lint) audited the app; static lint was clean (no dead functions, no unresolved ids, i18n dicts in sync, README accurate). Every code finding was fixed:
+- **Input**: `fromDisplay()` strips grouping/currency characters (`1,250.50`, `$3,000`) and returns `null` for anything non-finite; every cell commit keeps the previous value and toasts instead of writing 0 or `Infinity`. An emptied cell is an explicit 0.
+- **Dates**: `today()` is the LOCAL calendar date (it was UTC — evening users west of Greenwich got tomorrow's date, and a morning snapshot overwrote the previous evening's). `maybeBanner()` diffs civil dates.
+- **FX**: `fxRateKnown()` — when no rate exists for the selected currency, `curInfo()`/`fxRate()` fall back to USD (symbol and rate) and the tape, the currency picker and the ⚙ header say "rate unavailable — shown in USD". Never 1:1 under a foreign symbol. `importJSON()` calls `maybeRefreshFx()`, and a successful boot fetch re-renders the picker.
+- **Snapshots**: `prevSnapshot()` measures the Overview/tape delta against the newest point NOT taken today, so Refresh no longer reads "▲ $0 since today". Dated series keep their newest rows past `MAX_ROWS` (`sTail`/`capTail`).
+- **Prototype hygiene**: `allocByCat`, `spendByCat` and `chatContext`'s goal grouping use `Object.create(null)` — a category or `fundedBy` named `__proto__` was writing onto `Object.prototype`. `own()` guards every allowlist lookup. `chatSend()` builds its body inside the `try` so a throw can't wedge the composer on "Stop".
+- **Budget**: a category with any unlimited (`limit` 0) row is never "over limit" (`unlimited` flag on the `spendByCat` bucket); one `clampYears()`/`clampRate()` for sanitize, chart and inputs.
+- **Macro**: fetched dates/values go through `sDate`/`sNumN` and are `esc()`'d at render; BLS periods outside M01–M12 are rejected; re-entering a CPI reading keeps its note; no CPI back-fill onto older yields; empty yield read-row clears; tape REAL 10Y is neutral with no data.
+- **Storage**: a failed `save()` re-renders the footer AND shows a persistent banner (`showSaveBlocked()`), not just a 2.6s toast.
+- **Shortcuts**: 1–6 ignored while any `.intro-wipe.hold` dialog or `.hint-card` is on screen.
+- **a11y / motion / contrast**: `aria-label` on every `.del`, `role=status aria-live=polite` on `#toast`, charts get `animation:false` under reduced motion; `--faint` raised in all five themes and `--muted` on Latte so `.note`/`.empty`/notes cells clear 4.5:1 on both `--bg` and `--panel` (Latte was 1.97:1).
+- **Phone width**: `.topbar` wraps under 520px; no horizontal page overflow at 390/360px. Inline SVG favicon (data URI, zero requests). Real builds ship `inflation:[]`. `build.py`'s leak guard now also harvests whole multi-word row names, identifier-shaped tokens from notes/calendar (tickers, digit-bearing ids — never prose words) and the profile name; `GENERIC_NAMES` gained common multi-word account names. Dead `INTRO_ONCE_PER_SESSION` removed.
+- **QA**: three Playwright suites over `file://` — archive (78), settings menu (59) and a full-app regression suite (101 checks: every tab, CRUD on every table, grouped/hostile number entry, local-date in Honolulu and Tokyo, FX offline + mocked rates, `__proto__` imports, 1005-row history cap, shortcuts under modals, over-limit, save-blocked notice, per-theme contrast, 390/360px, favicon, a11y, export/import round-trip, reset) — all green in Chrome, with Firefox/WebKit smoke subsets. Suites live outside the repo (scratchpad); see Key facts for the two Playwright gotchas.
+
+**Savings goals** (Budgeting tab)
+- A target, a target date, a monthly contribution and the account category that funds it
+  (`renderGoals()` / `goalRowHTML()` / `wireGoalRows()` / `goalFundOptions()`; `renderGoalList()`
+  drives the ⚙ picker; `demoGoals()` seeds the example set).
+- **Progress is derived, never stored.** A goal reads the live balance of whatever `CAT_SETS`
+  category `fundedBy` names, so it moves as the ledger moves and there is no second number to keep
+  in sync. `fundedBy:""` means "not tied to an account" and shows contributions only.
+- Shows the monthly figure needed to land on the target date, and warns when the goals together
+  commit more than net cash flow — the one place the Budgeting tab cross-checks itself.
+- `MAX_GOALS` = 50, sanitized like every other row list. `fundedBy` is a free string for the same
+  reason `cat` is: a goal must survive a goal-type switch that renames the categories.
+- **This section was missing entirely until scan 8**, despite being a headline README feature with
+  two screenshots. It is the clearest example of why the lint rule at the top of this file exists.
+
+
+**Pre-launch polish pass** (scan 8 — six commits, 46 items)
+Three audit agents swept animations/empty states, every interactive control, and the first-run
+experience; an Opus manager verified each commit and a Sonnet agent ran lint + QA. Highlights,
+grouped by what they protect:
+
+- **A real correctness bug.** Three delete handlers ran `findIndex` → `splice(i,1)` with no `-1`
+  guard, so a miss removed the **last row of the array** instead. Reachable because the handlers
+  closed over `arr` while `importJSON()` replaces `state` wholesale. All four tables now go through
+  one `deleteRow(path,id)` that resolves the array from live `state` per call — which is also what
+  makes undo safe, since an undo closure capturing `arr` would reintroduce the very bug it fixes.
+  `undoBuf` holds `{path,index,row,seq}`, is ephemeral like `chatConn`, and is cleared by
+  `importJSON()`. Undo is offered in the toast **and** on Ctrl/⌘-Z, because a few-second toast
+  button is not a fair sole recovery affordance for a keyboard user.
+- **`toast()` is no longer single-slot.** It queues, in three classes: plain (collapses — only the
+  newest waits), error (`toastErr()`, preserved, deduped) and action (always preserved). A plain
+  FIFO was tried first and was wrong: action toasts sit for seconds, so a burst left the user
+  reading stale notices. The live region is the message **span**, so an action button is its
+  sibling — a control inside `aria-live` gets the region re-announced and never takes focus.
+- **The app stated a falsehood on the landing tab.** The Overview chart note read "One snapshot
+  logged so far" in the branch that only ever runs with **zero** snapshots (`pts` always carries
+  the live point). Branch-aware now, as are the Macro, budget and future-spend empty states —
+  real yield's copy names the actual cause, since it needs a CPI print dated at or *before* a
+  yield reading and can be empty with both series populated.
+- **Seeded data no longer rots.** `nextReleases()` and `dayOffset()` build the calendar at first
+  open; `build.py` passes it through as `RawJS("nextReleases()")` so the emitted file stays
+  byte-stable and `--check` stays meaningful. **Verified: two rebuilds are byte-identical.** The
+  author's `"verify date"` note and a hardcoded 2026-08-20 yield are gone from both builds.
+- **Keyboard parity.** Focus rings on the tab menu and every picker; Alt+↑/↓ reorders budget rows
+  (previously mouse-only, with no `tabindex`, `role` or key handler at all); focus traps and
+  immediate autofocus in all four dialogs — the old 480ms timer meant an early typist could put an
+  **archive passphrase into a ledger cell**, which then persisted it; `role="slider"` with live
+  values on both resize grips, Home to reset, and the keyboard save debounced via `saveSoon()`.
+- **Theme correctness.** `color-scheme` comes off a `scheme` field on each `THEMES` entry, written
+  by `applyTheme()` — it cannot be a static `:root` rule, because themes are applied as inline
+  custom properties with no `data-theme` attribute to select on. Several dark literals that
+  `applyTheme()` could never rewrite (table borders, row hover, banner gradient, importance tags,
+  a raw hex in the footer) are `color-mix()` off live tokens now.
+- **Example data** (`loadExampleData()`), offered in ⚙ **only on a genuinely empty install**
+  (`isFreshInstall()`, which measures budget *amounts*, not row counts — every build seeds rows and
+  a calendar). That gate is load-bearing: it means the feature can never touch `state.archive`,
+  whose `head`/`count` are the truncation anchor, and whose loss the way-back-out (a reset) would
+  otherwise cause. `exampleData` is sanitized, or the banner would vanish on reload while the fake
+  data stayed. The dataset was hoisted **outside** the `seed` variant block so the end-user build
+  has it at all; it takes no variant input, ever.
+- Import confirms before replacing everything, and always asks — an emptiness heuristic that is
+  wrong destroys work to save one click. Clearing a numeric cell keeps the previous value
+  (`commitNum()`); `fromDisplay("")` returning 0 used to zero an account silently while the blur
+  re-format left the box *looking* empty. Ticker tape has a pause control (WCAG 2.2.2). The tour
+  can be replayed. `APP_VERSION` is surfaced in About and the footer, and the copyright year is
+  computed. Repo gained `LICENSE` (MIT), `SECURITY.md` and issue templates.
+- **QA:** eight Playwright suites over `file://` — full-app 102, archive 70, settings menu 61,
+  keyboard/undo 60, first-run 26, example data 19, stale gate 16, per-theme contrast 10 — plus a
+  personal-build check (13) and a narrow-width overflow check that asserts zero horizontal page
+  overflow at 360 and 390px. Lint clean: no unresolved ids, no dead functions, no `console.log`,
+  i18n dicts in sync at 71 keys each (77 since stock quotes and cost basis / gain added six column labels). The archive's rejection paths were re-verified independently
+  by **mutation testing** (deleting the KDF bounds check and confirming the suite fails), because
+  a toast-helper change had made three archive tests pass again and that needed to be proven not
+  to be masking.
+- **`build.py` gained a third guard.** `check_budget_parity()` compares the row lists in
+  `exampleBudget()` (the HTML, filled amounts) and `BUDGET_TEMPLATE` (build.py, zeroed) and fails
+  the build if they differ by name, category or kind. There are deliberately two copies — the demo
+  seeds one and the other builds get the other — and nothing else would notice a row added to just
+  one of them. A comment used to claim the rows lived in one place; they do not.
+- **The one bug this pass introduced, and how it was caught.** The ⚙ example-data offer was gated
+  on `isFreshInstall()` at RENDER time only, and `loadExampleData()` never re-checked. Add your
+  first account without reloading, open ⚙ for the first time, and the offer was still live —
+  clicking it replaced that account and saved. The feature deliberately has no confirm, on the
+  argument that the gate makes one unnecessary, so a render-time-only gate took the whole safety
+  argument with it. **When a gate is the reason there is no confirm, it has to live where the
+  confirm would have.** Fixed by re-checking inside the action; mutation-tested (7 checks fail
+  with the guard removed). A sweep of every other render-time gate found no second instance —
+  archive append, reset commit, `deleteRow()`, `undoDelete()` and import all re-check at the
+  action.
+
+**Reset all data**
 **Reset all data**
 - ⚙ → **Reset all data** opens `showResetConfirm()`, which reuses the first-run overlay (`.intro-wipe.hold` + `.welcome`) in `--down` rather than the accent, so a destructive dialog never wears the friendly colour. It names what will go, states there is no server copy to recover from, offers an **Export a backup first** button wired straight to `exportJSON()`, and gates the confirm button behind typing `RESET_PHRASE` exactly.
 - **The phrase is case-sensitive on purpose** (trimmed, but `yes`/`YES` are rejected). A case-insensitive match makes the gesture reflexive, which is the one thing a destructive confirm must not be.
@@ -337,11 +537,13 @@ so a same-morning refresh legitimately returns the prior business day.
 - Chart **datasets stay in USD**; only the tick formatters (`tickMoney()` / `tickMoneyK()`) convert at render time. Converting the data would corrupt axis scaling.
 - **Editable cells round-trip through `toDisplay()` / `fromDisplay()`; `state` is always USD.** Every display is re-derived from that single source of truth, so flipping currencies repeatedly causes no drift (nothing is written unless the user actually edits).
 - **FX source is `open.er-api.com`, not Frankfurter.** Frankfurter was the first choice (open-source, ECB-backed) but **ECB publishes no TWD rate at all**, and TWD is required. Don't "improve" this back to Frankfurter without re-checking that. `fetchFxRates()` / `refreshFx()` / `maybeRefreshFx()`; keyless, CORS-open, cached in `state.fx.rates` with `state.fx.lastFetch`.
-- FX fetch is **deliberately not gated by `state.autoRefresh`** — unlike opt-in Treasury/CPI data, currency is an explicit user selection, and a missing rate would silently mislabel USD figures as ¥/€. It fetches once a day whenever a non-USD currency is active, falls back to the last cached rate, and marks the picker `(est.)` when no rate was ever fetched.
+- FX fetch is **deliberately not gated by `state.autoRefresh`** — unlike opt-in Treasury/CPI data, currency is an explicit user selection, and a missing rate would silently mislabel USD figures as ¥/€. It fetches once a day whenever a non-USD currency is active, falls back to the last cached rate, and marks the picker `(rate unavailable — shown in USD)` when no rate exists for the selected currency — figures then stay in USD (`fxRateKnown()`) rather than showing USD numbers under a foreign symbol.
 
 **Settings menu (⚙)**
-- Eight collapsible sections (`.set-sec` / `.set-head` / `.set-body`): Theme, Auto-refresh, 語 Language, € Currency, ◎ Tracking, ✎ Your name, ✦ Assistant, ⧉ Quarterly archive — plus a **Reset all data** button below them. The reset is deliberately *not* a `.set-sec`: `openSetSection()` treats every `.set-head` as an accordion panel, and a one-shot destructive action is not a picker. **Accordion — one open at a time** (`openSetSection()`), all collapsed on every open, with the active value shown in each collapsed header (`setSectionCurrent()`). Wired once by `initSettingsSections()`.
+- Nine collapsible sections (`.set-sec` / `.set-head` / `.set-body`): Theme, Auto-refresh, Stock quotes, 語 Language, € Currency, ◎ Tracking, ✎ Your name, ✦ Assistant, ⧉ Quarterly archive — plus **◷ Replay the intro hints**, a conditional **◆ Load example data** (shown only while `isFreshInstall()`), and a **Reset all data** button below them. The reset is deliberately *not* a `.set-sec`: `openSetSection()` treats every `.set-head` as an accordion panel, and a one-shot destructive action is not a picker. **Accordion — one open at a time** (`openSetSection()`), all collapsed on every open, with the active value shown in each collapsed header (`setSectionCurrent()`). Wired once by `initSettingsSections()`.
 - `.theme-list` has `max-height` + `overflow-y:auto` + **`overscroll-behavior:contain`** — that last property is what stops scrolling the menu from chaining to the page behind it.
+- **User-resizable, and the contents scale with it.** A corner grip (`#setMenuResize`, bottom-left, mirroring `#tvResize`'s conventions — pointer events + `setPointerCapture`, arrow-key nudging, drag saves once on release while a keypress saves immediately) drives `state.setMenuScale` (clamped `0.85`–`1.6` by `clampSetScale()`, default `1`). `applySetMenuScale()` is the sole writer of `--set-scale` on `#themeList`. **Every fixed-px size inside the menu is `calc(basePx * var(--set-scale,1))`** — font-sizes, paddings, gaps, the theme swatch icons, even the one existing fluid-token exception (`.set-danger button`'s `var(--l-micro)`) — so scale 1 is pixel-identical to before this feature and every other value moves in lockstep with it. **Deliberately NOT scaled:** border-width, border-radius and box-shadow (decoration, not legibility). `max-height` is `min(70vh,calc(520px * var(--set-scale,1)))` — the 520px term scales so a bigger menu is actually taller, while the `70vh` term is what still keeps it on screen. It was a flat `520px` at first, which meant the box stopped growing at ~15% up while its rows kept inflating: you got a scrollbar and stretched-looking rows instead of a bigger menu.
+- **Each drag axis is normalised by its own base dimension** (`initSetMenuResize()`). Both axes originally divided the pointer delta by `250` — the base *width* — but the menu is ~1.8x taller than it is wide, so a downward drag resized it 1.8x faster than the cursor moved (100px of drag jumped the scale to 1.4). `dy` now divides by the base *height*, so the bottom edge tracks the pointer the way the left edge always did; whichever axis asks for more growth drives the scale, so the grip never lags behind a diagonal drag. Bases are measured from the live box once on `pointerdown` (`offsetWidth`/`scrollHeight` ÷ the starting scale) — re-measuring mid-drag would feed a just-resized box back into its own input, and `scrollHeight` is the right height because `max-height` clips the visible box while the content is what the scale drives. The QA suite asserts the 1:1 tracking property rather than a scale number; the old test encoded the buggy divisor as `1.09`. `min-width` is capped to `calc(100vw - 24px)` for the same reason sideways, so a maxed-out scale can't force horizontal scroll on a narrow screen. The grip lives in a `position:sticky` footer row so it never scrolls out of reach, even with Quarterly Archive's long content open. Double-click resets to `1`.
 - **Scope picker selectors to their `data-` attribute, never `.theme-opt`.** That class is now shared by all six theme-styled pickers (`[data-theme]`, `[data-auto]`, `[data-lang]`, `[data-cur]`, `[data-goal]`, `[data-namecolor]`); the Assistant section's model `<select>` uses `[data-chatset]` for the same reason. `renderThemeList()` used the broad selector and cleared `aria-current` on Language/Currency/Auto-refresh every time a theme was picked — fixed by scoping to `[data-theme]` (5 elements). The other three already scoped correctly.
 
 **✦ Assistant — in-panel connection onboarding**
@@ -377,8 +579,9 @@ so a same-morning refresh legitimately returns the prior business day.
 - JSON export/import for backup and restore (`exportJSON()` / `importJSON()`)
 - **Tab-scoped Refresh button**: behavior now branches on the active tab (refreshBtn handler inside `init()`) — Overview still snapshots net worth into history (unchanged); Macro Signals pulls live data (see above); Ledger/Calendar just re-render with a light toast. Previously Refresh always snapshotted + jumped to Overview regardless of tab; changed because a full page reload (F5) covers the "everything" case and the button reads clearer scoped to what's on screen. The stale-data banner copy was updated to match (now explicitly says update in Ledger, then hit Refresh on **Overview**).
 - Stale-data nudge banner (fires after 7 days since last update, or if no snapshots exist) (`maybeBanner()`), with a third branch for an empty ledger — "confirm today's values" is wrong copy when there are no values yet
-- Keyboard shortcuts (1-6 switch tabs, Esc closes menus). Order: Overview, Ledger, Budgeting, Macro, Calendar, About. Budgeting was inserted at 3 (shifting Macro 3→4, Calendar 4→5); About was appended at 6 specifically to avoid shifting anything again. **Adding a tab means editing four places in lockstep** — the menu `<button>`, the `<section id="tab-…">`, `TAB_NAMES`/`REFRESH_TITLE`, and the keydown array.
-- **Numeric table headers are LEFT-aligned while the figures stay right-aligned** (`thead th.num{text-align:right}` was deleted; `.cell.num` / `tfoot td.num` / `.sec-head td.num` keep the numbers right). Recorded as a decision so it isn't "fixed" back: right-aligning a numeric header pins it to its column's right edge, landing it within one `th`'s padding (~20px, whatever the column widths are) of the next left-aligned header — Budget's LIMIT and TYPE read as one jammed pair. **No column-width change can widen that gap**; only the alignment can.
+- Keyboard shortcuts (1-6 switch tabs, Esc closes menus). Order: Overview, Ledger, Budgeting, Macro, Calendar, About. Budgeting was inserted at 3 (shifting Macro 3→4, Calendar 4→5); About was appended at 6 specifically to avoid shifting anything again. **Adding a tab means editing five places in lockstep** — the menu `<button>`, the `<section id="tab-…">`, `REFRESH_TITLE`, the keydown array, and `CHROME_MAP` plus the three `LANGS` dicts.
+- **Numeric table headers are RIGHT-aligned, over their figures** (`thead th.num{text-align:right}`, alongside `.cell.num` / `tfoot td.num` / `.sec-head td.num` / `.arch-wrap td.num` on the numbers). This reverses an earlier decision that went the other way, so read the trade-off before flipping it a third time. Right-aligning does have the cost that was originally recorded: a numeric header pins to its column's right edge and so lands within one `th`'s padding (~20px) of the next left-aligned header, leaving Budget's LIMIT close to TYPE. **That gap is `padding-right` + `padding-left` of the two `th`s, not a function of column widths, so no width change can widen it.** Accepted anyway on review — a header floating a column-width from the figures it labels is the worse of the two. Two things keep this coherent: only right-aligned columns carry `.num` (Budget's TYPE deliberately does not, since its values are left-aligned `<select>`s), and the `th`'s 10px `padding-right` equals the figures' effective right inset (`tbody td{padding:2px}` + `.cell{padding:8px}`) — that equality is the only reason label and number share an edge, so don't adjust either padding alone.
+- **The quarterly archive's figures are right-aligned too** (`.arch-wrap td.num`), added with the above. They had no alignment rule at all and rendered left while every other money table ran right; the cells were already `num tnum`, so right was always the intent. Keyed on `.num` not `.tnum` — the "Archived on" timestamp is `.tnum` only and stays left.
 - Chart helpers: `mountChart(id,type,...)` is the shared guard/destroy core; `line()` and `bars()` are thin wrappers over it (`mountChart()`). Use `bars()` for any new bar chart rather than hand-rolling a `new Chart(...)`.
 - Watermark footer: "SomiFinance ©2026 mDemarco12" (`.watermark`)
 - Responsive layout — fluid shell and type (see *Fluid sizing* under Done); the panel grid still collapses to 1 column under 840px
@@ -386,7 +589,6 @@ so a same-morning refresh legitimately returns the prior business day.
 
 ## Could be done
 
-- Live market price feeds for **assets** (brokerage holdings, etc.) — still manual entry. (Treasury yields, CPI, and a reference economic calendar are now live-pulled — see Macro Signals / Economic Calendar above.)
 - Per-asset value history — only net-worth *totals* are snapshotted continuously. The quarterly archive now records every holding once per quarter; anything finer-grained is still open
 - Budget **history** — the Budgeting tab models a single current month. The quarterly archive seals the budget once per quarter, but there's still no month-over-month tracking or actual-vs-budget over time (net worth has `history[]`, budget has no equivalent). Natural next step if budgeting gets used seriously.
 - Transaction-level tracking / bank import — budgeting is category-level and hand-entered by design
@@ -397,29 +599,27 @@ so a same-morning refresh legitimately returns the prior business day.
 - PWA install support (manifest + service worker) — would also make the "offline" claim fully true on first load
 - State-schema *versioning* (the storage key is suffixed `.v1` and `sanitizeState()` now coerces any shape to the current one, but there's no explicit version field or migration ladder)
 - Cloud sync / accounts — explicitly out of scope today; footer says "your pipeline can write the same JSON shape... and you re-Import it"
-- Delete confirmation on ledger/calendar row deletes (currently instant, no undo)
 - In-app category management (add a custom category from the Overview tab, rename one in place) — **tried and deliberately reverted.** It added a "+" button + ✎ rename chips to the Allocation panel, but the user decided category management should happen implicitly: pick "Alternative Asset" (or any category) in the Ledger when adding an asset, name the asset itself, and it flows into the allocation automatically. Don't re-add a category CRUD UI without checking this decision first.
 
 ## Needs polish
 
-- **The topbar overflows at phone width** — at 400px the Refresh / Export / Import / ⚙ buttons run 270px past the viewport, so the whole page scrolls sideways. Pre-existing (identical on `main` before the archive landed), found during archive QA
-- No favicon, no OG tags (a `<meta name="description">` was added with the CSP)
+- No OG/Twitter card tags. The inline SVG favicon and `<meta name="description">` are in.
 - Onboarding copy is English-only, so a zh-Hant/zh-Hans user still gets an English first run. Now broader than it was: the welcome screen, all hint bodies (four goals × five steps), the reset confirm dialog, and the two newest ⚙ sections are all untranslated. Consistent with the "chrome only" i18n scope, but it's the one place that inconsistency is most likely to be noticed.
-- Monolithic single file (~455 KB, ~4540 lines) — ~200 KB of that is inlined Chart.js, so hand-written code is ~255 KB. Fine for personal use; worth a deliberate decision (keep as a distribution feature vs. split into modules) once this becomes a shipped product
+- Monolithic single file (~528 KB, ~5627 lines) — ~200 KB of that is inlined Chart.js, so hand-written code is ~328 KB. Fine for personal use; worth a deliberate decision (keep as a distribution feature vs. split into modules) once this becomes a shipped product
 
 ## Key facts for future me
 
 - Everything lives in one `<script>` block at the bottom of the file.
 - **There is no test suite in the repo.** The quarterly archive was QA'd with a throwaway Playwright script driving the real builds over `file://` (Chrome, plus Playwright's Firefox and WebKit). Two things will bite anyone automating this page again: **`page.wait_for_function()` fails** — it polls by evaluating a string, which the hash-only `script-src` correctly refuses (`EvalError … 'unsafe-eval'`); poll `page.evaluate()` from the test side instead, which isn't subject to page CSP. And **don't assign to a global named `status` in an evaluate** — it's `window.status` and coerces arrays to strings. Don't "fix" the first one with `bypass_csp`: the CSP is part of what needs testing.
-- State object shape: `{ updated, onboarded, hintsDone, profile{name,goal,nameColor}, theme, lang, currency, fx{rates{},lastFetch}, calendarOrder[], liveCalHeight, autoRefresh, lastFetch, assets[], liabilities[], history[], yields[], inflation[], calendar[], goals[], budget{}, chat{ack,endpoint,model,messages[]}, archive{lastQuarter,lastAt,salt,head,count} }`. No category-management fields — categories are just strings on each asset/liability. **All monetary values are stored in USD regardless of the selected display currency.**
+- State object shape: `{ updated, onboarded, hintsDone, profile{name,goal,nameColor}, theme, lang, currency, fx{rates{},lastFetch}, calendarOrder[], liveCalHeight, autoRefresh, lastFetch, assets[], liabilities[], history[], yields[], inflation[], calendar[], goals[], budget{}, chat{ack,endpoint,model,messages[]}, archive{lastQuarter,lastAt,salt,head,count}, quotes{enabled,endpoint,lastFetch,gainMode}, tapePaused, exampleData }`. No category-management fields — categories are just strings on each asset/liability. **All monetary values are stored in USD regardless of the selected display currency.**
 - **Every new state field needs a line in `sanitizeState()`** — it is the single door into `state` (called by both `load()` and `importJSON()`) and supplies every default, so a field missing from it is silently dropped on the next load. This replaces the old per-scalar `load()` backfills, which are gone. `normalizeBudget()` still plays the same role for the budget block. See **Security posture**.
 - `budget` = `{ income:[{id,name,cat,amount,optional,notes}], expenses:[{id,name,cat,amount,limit,kind,optional,notes}], assumptions:{rate,years} }`, where `kind` ∈ `essential|discretionary`. Categories come from the active goal's `CAT_SETS` entry (personal 11 income / 21 expense; business 7 / 16). **`normalizeBudget()` is the compatibility shim** — called from BOTH `load()` and `importJSON()`; it backfills missing arrays/assumptions/ids and coerces a bad `kind`, so older saves and partial imports don't crash the tab. Any new budget field should get a default there too.
-- `assets`/`liabilities` items: `{ id, name, cat, value, notes }`. Categories come from the active goal's `CAT_SETS` entry (personal 13 assets incl. "Alternative Asset" and "Other" / 6 liabilities; business 10 / 6) — no user-editable category list. `colorForCat(c)` returns the curated color from `CAT_COLOR` when one exists, otherwise a deterministic hash-based color from `CAT_PALETTE`, so any category string (even a stray/legacy one) still renders with a stable color.
+- `assets`/`liabilities` items: `{ id, name, cat, value, notes }`; assets also carry `{ ticker, shares, price, priceAt, costBasis }` (`price` in USD, `null` until fetched; `priceAt` is the date the quote is as of). Categories come from the active goal's `CAT_SETS` entry (personal 13 assets incl. "Alternative Asset" and "Other" / 6 liabilities; business 10 / 6) — no user-editable category list. `colorForCat(c)` returns the curated color from `CAT_COLOR` when one exists, otherwise a deterministic hash-based color from `CAT_PALETTE`, so any category string (even a stray/legacy one) still renders with a stable color.
 - The Overview allocation panel (`renderOverview()`) groups `state.assets` by whatever string is in `a.cat` — it has no awareness of `CAT_SETS` beyond coloring, so it will happily show a category that isn't in the active goal's dropdown if old, imported, or other-goal data has one. That is by design and is why `catOptions()` exists: the chart and the select agree on the real value rather than the select quietly showing something else.
 - `history` items: `{ date, net, assets, liab }` — one point per `snapshot()` call.
 - `yields` items: `{ date, y10, y20, y30 }`; `inflation` items: `{ date, cpi, note? }`.
 - `calendar` items: `{ id, date, event, imp, notes }`, `imp` ∈ High/Med/Low/Personal.
 - `THEMES` object defines all theme tokens; `applyTheme()` writes them as CSS custom properties at runtime.
 - `seed()` produces first-run data; `load()`/`save()` wrap `localStorage` under **the key for that build** — `KEY` / `LEGACY_KEY` live in the `@variant:begin storage` block and differ per build (see Snapshot). `load()` migrates `LEGACY_KEY` forward automatically if `KEY` is empty, which is both the `wealthdesk.v1` path and the personal build's `somifinance.v1` path. Note: browsers that went through the earlier (reverted) custom-category feature may still have stray `customCats`/`altAssetSeeded` keys sitting unused in their saved JSON — harmless, nothing reads them anymore.
-- Live-data functions: `fetchTreasuryYields()` / `fetchLatestCPI()` / `refreshMacroData()` (`refreshMacroData()`) — no API keys, both sources are open government data. **Do not swap these for Yahoo Finance** if asked again: confirmed via direct testing that Yahoo's endpoints aren't CORS-open (would silently fail in-browser with no backend to proxy through) and Yahoo has no CPI data at all (that's a BLS/government stat, not market data).
+- Live-data functions: `fetchTreasuryYields()` / `fetchLatestCPI()` / `refreshMacroData()` (`refreshMacroData()`) — no API keys, both sources are open government data. **Do not swap these for Yahoo Finance** if asked again: confirmed via direct testing that Yahoo's endpoints aren't CORS-open (would silently fail in-browser with no backend to proxy through — stock quotes get around this with the local `quotes.py` helper, which is opt-in and not something the always-available macro feeds should depend on) and Yahoo has no CPI data at all (that's a BLS/government stat, not market data).
 - Same rejection logic applies to the calendar widget: Bloomberg and investing.com both returned HTTP 403 on direct request (active bot-blocking) and both prohibit scraping in ToS — don't attempt to pull structured data from either. TradingView's `embed-widget-events.js` (`#tvBox`) is the current no-key solution; Finnhub and Financial Modeling Prep are confirmed CORS-open fallbacks if structured (editable-table-feeding) calendar data is wanted later, but both require the user to sign up for a free API key first.

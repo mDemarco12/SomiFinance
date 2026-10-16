@@ -72,9 +72,10 @@ SomiFinance is a single-page dashboard for tracking your net worth alongside the
 - **Optional auto-refresh** of Treasury and CPI data on load (ships off — see below)
 - A gentle reminder banner if your numbers haven't been touched in a while
 - **Start over** — ⚙ → Reset all data clears everything and returns you to the first-run screen. It warns you what will go, offers to export a backup first, and won't proceed until you type `Yes`
-- Keyboard shortcuts (`1`–`6` to switch tabs, `Esc` to close menus)
+- **See it with data in it** — ⚙ → Load example data fills a new install with a made-up portfolio so you can look around before entering anything real. Offered only while your install is still empty, and a banner says so the whole time it's loaded
+- **Undo a deleted row** — `Ctrl`/`⌘`+`Z`, or the Undo button on the message that appears
+- Keyboard shortcuts (`1`–`6` to switch tabs, `Esc` to close menus). Everything is reachable without a mouse, including reordering budget rows (`Alt`+`↑`/`↓`) and resizing panels
 - Layout that follows your window — the shell, tiles and type scale up on a large monitor and collapse to a single column on a small one
-- Reset your instance to Factory Specs with an integrated Reset button within the settings (and you have the option to back-up your data, and you must type 'Yes' before the reset)
   
 <img width="665" height="598" alt="Screenshot 2026-09-07 at 11 34 42" src="https://github.com/user-attachments/assets/c783c2af-1bd0-4c39-b9b5-d5f0d374a98d" />
 
@@ -93,13 +94,14 @@ Your data is saved automatically to that browser's local storage. Use **Export**
 
 Everything runs client-side. Your figures never leave your browser — there's no account, no server, and no analytics.
 
-Chart.js is bundled directly into the file rather than loaded from a CDN, so **opening the page makes zero network requests by default**. The app only ever reaches out when you ask it to, and never sends your financial data anywhere:
+Chart.js is bundled directly into the file rather than loaded from a CDN, so **opening the page makes zero network requests by default**. The app only ever reaches out when you ask it to, and never sends your figures anywhere. The one thing about your holdings that can leave your machine is a list of ticker symbols, and only if you turn stock quotes on:
 
 | Request | When | What it's for |
 |---|---|---|
 | TradingView | First time you open the Economic Calendar tab | The live calendar widget |
 | U.S. Treasury + BLS | Refresh on Macro Signals (or on load, if you turn auto-refresh on) | Latest yields and CPI |
-| open.er-api.com | Only when a non-USD currency is selected | Exchange rates |
+| open.er-api.com | When a non-USD currency is selected, or when stock quotes are on and a quote comes back priced in another currency | Exchange rates |
+| Yahoo Finance, via `quotes.py` on your own machine | **Off by default.** Only after you turn on ⚙ → Stock quotes, and then when you press Refresh on Assets & Liabilities | Stock name and last price. Only your ticker symbols are sent — never share counts, values or notes |
 | Your own machine (`127.0.0.1`/`localhost`) | When you open the ✦ assistant panel (one quick check that Ollama is reachable) and when you send it a message | Local Ollama chat — never leaves your computer |
 
 The quarterly archive makes no network requests at all: it's encrypted in your browser with its built-in Web Crypto, and the file goes wherever you save it. The passphrase is never stored — not in the file, not in the browser.
@@ -108,8 +110,8 @@ Each fails gracefully — if a request doesn't go through, the app keeps working
 
 Two things enforce that rather than just promising it:
 
-- **A Content-Security-Policy** in the page head names every host the app may contact — three remote hosts, plus loopback ports for the optional local assistant — so even a bug or an injection has nowhere to send your figures off this machine. Its `script-src` lists SHA-256 hashes instead of allowing inline script, which means injected event handlers won't run at all. The loopback allowance is unroutable off-machine, but it does widen what injected script could reach on your own machine — see `PROJECT_STATUS.md` for the honest tradeoff.
-- **The TradingView widget is sandboxed.** It's third-party code, so it loads in an iframe with no same-origin access — it can't read your saved data or touch the page. Opening the Calendar tab does contact TradingView's servers, but they receive nothing about you beyond the request itself.
+- **A Content-Security-Policy** in the page head names every host the app may contact — three remote hosts, plus loopback ports for the optional local assistant and the optional quote helper (which is what contacts Yahoo Finance) — so even a bug or an injection has nowhere to send your figures off this machine. Its `script-src` lists SHA-256 hashes instead of allowing inline script, which means injected event handlers won't run at all. The loopback allowance is unroutable off-machine, but it does widen what injected script could reach on your own machine — see `PROJECT_STATUS.md` for the honest tradeoff.
+- **The TradingView calendar runs no third-party script.** It's a sandboxed iframe pointed directly at TradingView's own page, with no same-origin access — it can't read your saved data or touch the page. Opening the Calendar tab does contact TradingView's servers, but they receive nothing about you beyond the request itself.
 
 Imported backups are treated as untrusted input: every field is validated against a whitelist and all row ids are regenerated, and nothing is written to storage until the imported file has rendered cleanly.
 
@@ -124,6 +126,15 @@ There's nothing to build to *use* SomiFinance — you download one HTML file and
 ## Roadmap
 
 This is an actively evolving personal project. For the full breakdown of what's built, what's planned, and known rough edges, see [PROJECT_STATUS.md](PROJECT_STATUS.md).
+
+## License
+
+MIT — see [LICENSE](LICENSE). Chart.js and the Catppuccin palettes are bundled under their own MIT
+licences, noted there.
+
+## Security
+
+Found a vulnerability? Please report it privately rather than in an issue — see [SECURITY.md](SECURITY.md).
 
 ## Disclaimer
 

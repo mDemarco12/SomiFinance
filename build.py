@@ -65,6 +65,11 @@ BANNER = (
 STRUCTURAL_LEAKS = [
     (re.compile(r"\d+\s*sh\s*[×x]\s*\$"), "a share-count note (count, 'sh', then a price)"),
     (re.compile(r"\bLong\s+\d+\s+contracts?\b"), "an options position note"),
+    # Stock quotes gave asset rows a symbol field. A tracked build seeds none — the demo stays
+    # symbol-free and the end-user build is empty — so ANY filled one is real data on its way out.
+    # Matched by shape rather than by harvesting the symbols themselves: plenty of them are also
+    # ordinary capitalised words, and a word-list match would fire on the source's own comments.
+    (re.compile(r"\bticker:\s*\"[^\"]+\""), "a seeded row with its symbol field filled in"),
 ]
 
 _secret_re = None
@@ -80,7 +85,42 @@ _secret_re = None
 GENERIC_NAMES = {
     "401(k)", "403(b)", "457", "IRA", "HSA", "FSA", "Car", "Cash", "Crypto",
     "Mortgage", "Savings", "Checking", "Pension", "Bonds", "Home", "House",
+    # multi-word names any household uses — matched case-insensitively as whole phrases
+    "Checking / savings", "Checking account", "Savings account", "Emergency fund",
+    "Primary residence", "Credit card", "Auto loan", "Student loan", "Car loan",
+    "Brokerage account", "Roth IRA", "Traditional IRA", "Money market", "Treasury bills",
+    "Index fund", "Digital assets", "Car / vehicle", "Home equity", "Rent / mortgage",
 }
+_GENERIC_LOWER = {g.lower() for g in GENERIC_NAMES}
+
+
+# Acronyms that are ordinary finance vocabulary, not tickers. Prose fields (notes, calendar
+# entries) contribute only ticker-shaped or digit-bearing tokens, and these are the ticker-shaped
+# words that every build legitimately contains.
+KNOWN_ACRONYMS = {
+    "CPI", "FOMC", "IRA", "HSA", "FSA", "ETF", "ETFS", "USD", "EUR", "GBP", "JPY", "TWD", "CNY",
+    "YOY", "US", "UK", "EU", "APR", "APY", "ATM", "ACH", "IPO", "RSU", "RSUS", "ESPP", "PMI",
+    "HOA", "LLC", "INC", "GDP", "BLS", "FED", "NYSE", "REIT", "REITS", "AGI", "TBD", "EOD", "EOM",
+}
+_TICKER = re.compile(r"^[A-Z]{2,6}(?:\.[A-Z])?$")
+_YEAR_OR_DATE = re.compile(r"^(?:19|20)\d\d(?:-\d\d(?:-\d\d)?)?$")
+
+
+def _identifier_tokens(text):
+    """Tokens of free text that look like identifiers rather than words: tickers, account or
+    contract numbers. Ordinary English is deliberately NOT harvested — a guard that fires on
+    "before" or "close" trains everyone to ignore it."""
+    for tok in re.findall(r"[A-Za-z0-9][A-Za-z0-9.\-]*", text):
+        t = tok.rstrip(".")
+        if _TICKER.match(t) and t not in KNOWN_ACRONYMS and t not in GENERIC_NAMES:
+            yield t
+        elif _YEAR_OR_DATE.match(t):
+            continue
+        else:
+            digits = sum(c.isdigit() for c in t)
+            letters = sum(c.isalpha() for c in t)
+            if digits >= 4 or (digits >= 3 and letters >= 1):
+                yield t
 
 
 def load_leak_terms(public=None):
@@ -94,13 +134,21 @@ def load_leak_terms(public=None):
     if os.path.exists(path):
         with open(path, encoding="utf-8") as fh:
             d = json.load(fh)
+        # Row NAMES are taken whole — a single token as before, a multi-word name as an exact
+        # phrase — because a real account name is the thing that leaked last time. Free text
+        # (notes, calendar entries) and the profile name contribute only identifier-shaped tokens;
+        # see _identifier_tokens() for why prose words are left alone.
         for row in d.get("assets", []) + d.get("liabilities", []) + d.get("goals", []):
             name = (row.get("name") or "").strip()
-            # single tokens only — a multi-word name is prose, matched by structure instead
-            if not name or " " in name or len(name) < 2:
-                continue
-            if name not in GENERIC_NAMES:
+            if len(name) >= 2 and name.lower() not in _GENERIC_LOWER:
                 terms.add(name)
+            terms.update(_identifier_tokens(row.get("notes") or ""))
+        for row in d.get("calendar", []):
+            terms.update(_identifier_tokens(row.get("event") or ""))
+            terms.update(_identifier_tokens(row.get("notes") or ""))
+        who = (d.get("name") or "").strip()
+        if len(who) >= 3 and who.lower() not in _GENERIC_LOWER:
+            terms.add(who)
     _secret_re = (
         re.compile(r"(?<![A-Za-z0-9])(?:%s)(?![A-Za-z0-9])"
                    % "|".join(re.escape(t) for t in sorted(terms)))
@@ -194,6 +242,15 @@ def build(src, variant, name):
 
 # ---------------------------------------------------------------- variant data
 
+class RawJS(str):
+    """A seed value that is JavaScript to emit verbatim, not data to JSON-encode.
+
+    seed_block() normally renders rows as object literals with quoted values. Wrapping a string
+    in RawJS says "this is already an expression" — used for calendar:nextReleases(), where the
+    rows must be built when the page first opens rather than frozen at build time.
+    """
+
+
 def storage_block(key, legacy):
     return (
         "// Each build gets its own key so opening one can never read or overwrite another's data —\n"
@@ -207,6 +264,8 @@ def storage_block(key, legacy):
 def seed_block(assets, liabilities, calendar, goals, profile, onboarded, note):
     """Render a seed() whose shared fields track the demo's — only data differs."""
     def rows(items):
+        if isinstance(items, RawJS):
+            return str(items)
         if not items:
             return "[]"
         out = []
@@ -230,14 +289,21 @@ function seed(){
     fx:{rates:{USD:1},lastFetch:""},
     calendarOrder:["personal","live"],
     liveCalHeight:500,   // px height of the TradingView box — user-set via the corner grip
+    setMenuScale:1,      // ⚙ menu size, text and spacing together — user-set via its corner grip
+    tapePaused:false,    // ticker tape stopped by the user (WCAG 2.2.2 pause control)
+    exampleData:false,   // true while the ⚙ example dataset is loaded — drives the banner
     autoRefresh:"off",   // off | stale | always — default off keeps page load request-free
     lastFetch:"",        // YYYY-MM-DD of the last fully successful macro fetch
     archive:{lastQuarter:"",lastAt:"",salt:"",head:"",count:0},   // nudge + truncation anchor only
+    quotes:{enabled:false,endpoint:"http://127.0.0.1:8765",lastFetch:"",gainMode:"amount"},   // Yahoo quotes — opt-in, see quotesOn()
     assets:%s,
     liabilities:%s,
     history:[],
-    yields:[{date:"2026-08-20",y10:4.69,y20:5.05,y30:5.23}],
-    inflation:[{date:"2026-07-31",cpi:3.2,note:"EXAMPLE — replace with latest print"}],
+    yields:[],      // was a single hardcoded 2026-08-20 reading: it rendered as three lone dots on
+                    // an otherwise empty chart, and the ticker tape reported it as the live 10/20/30yr
+                    // with no as-of date, so it read as current forever. Empty like history and
+                    // inflation; renderMacro()'s empty states invite a Refresh instead.
+    inflation:[],
     calendar:%s,
     goals:%s,
     chat:{ack:false,endpoint:"http://127.0.0.1:11434",model:"",messages:[]},
@@ -287,11 +353,53 @@ BUDGET_TEMPLATE = """function seedBudget(){
 }"""
 
 # Calendar releases are reference data, not user data — every build keeps them.
-RELEASES = [
-    {"date": "2026-09-04", "event": "Nonfarm payrolls (Aug)", "imp": "High", "notes": "verify date"},
-    {"date": "2026-09-10", "event": "CPI (Aug)", "imp": "High", "notes": "verify date"},
-    {"date": "2026-09-16", "event": "FOMC rate decision", "imp": "High", "notes": "verify date"},
-]
+# Not a list of rows any more. The seeded calendar used to be three hardcoded September-2026
+# dates carrying the note "verify date" — they shipped stale (two were already in the past by
+# release) and the note was a developer artifact rendered in a user-facing cell. nextReleases()
+# lives in the shared part of the page and computes its dates when the file is first opened, so
+# this stays a build-time constant and the output file stays byte-stable for --check.
+RELEASES = RawJS("nextReleases()")
+
+
+def _budget_rows(js):
+    """(name, cat) for each inc(...) and (name, cat, kind) for each exp(...).
+
+    Both row lists put name, cat and kind first and differ only in the numeric arguments that
+    follow, so the same two patterns read either one.
+    """
+    inc = re.findall(r'inc\(\s*"((?:[^"\\]|\\.)*)"\s*,\s*"((?:[^"\\]|\\.)*)"', js)
+    exp = re.findall(r'exp\(\s*"((?:[^"\\]|\\.)*)"\s*,\s*"((?:[^"\\]|\\.)*)"\s*,\s*"((?:[^"\\]|\\.)*)"', js)
+    return inc, exp
+
+
+def check_budget_parity(src):
+    """Abort if the two copies of the budget row list have drifted apart.
+
+    There are two on purpose. exampleBudget() in the HTML carries the filled amounts, and is what
+    the demo build seeds and what "Load example data" loads. BUDGET_TEMPLATE here is the same rows
+    with every amount at 0, and build.py swaps it in for the end-user and personal builds.
+
+    They are not generated from one another, so nothing else notices if a row is added to one and
+    not the other — the seeded budget and the example budget would simply disagree, silently and
+    per build. This makes that a build failure instead.
+    """
+    m = re.search(r"function exampleBudget\(\)\{.*?\n\}", src, re.S)
+    if not m:
+        die("exampleBudget() not found — the budget parity check can no longer run.")
+    ex_inc, ex_exp = _budget_rows(m.group(0))
+    tp_inc, tp_exp = _budget_rows(BUDGET_TEMPLATE)
+    if not ex_inc or not ex_exp:
+        die("budget parity check read no rows from exampleBudget() — the pattern has gone stale.")
+    for label, a, b_ in (("income", ex_inc, tp_inc), ("expense", ex_exp, tp_exp)):
+        if a != b_:
+            only_ex = [r for r in a if r not in b_]
+            only_tp = [r for r in b_ if r not in a]
+            die("budget row lists have drifted (%s).\n"
+                "  exampleBudget() in %s has %d rows, BUDGET_TEMPLATE in build.py has %d.\n"
+                "  only in exampleBudget(): %s\n"
+                "  only in BUDGET_TEMPLATE: %s\n"
+                "  Add the row to BOTH, or the seeded budget and the example data disagree."
+                % (label, SOURCE, len(a), len(b_), only_ex or "-", only_tp or "-"))
 
 
 def demo_strings(title, watermark, key, calendar_note):
@@ -299,7 +407,7 @@ def demo_strings(title, watermark, key, calendar_note):
     return [
         ("<title>SomiFinance — Demo</title>", "<title>%s</title>" % title),
         (
-            '<div class="watermark">SomiFinance — Demo ©2026 mDemarco12</div>',
+            '<div class="watermark">SomiFinance — Demo ©<span id="wmYear">2026</span> mDemarco12 · <span id="wmVer"></span></div>',
             '<div class="watermark">%s</div>' % watermark,
         ),
         (
@@ -311,7 +419,7 @@ def demo_strings(title, watermark, key, calendar_note):
             'localStorage["%s"] — every holding' % key,
         ),
         (
-            "Seeded with recurring US releases plus two example personal dates.",
+            "Starts with a few example rows so the table isn't empty — edit or delete them freely.",
             calendar_note,
         ),
     ]
@@ -338,9 +446,9 @@ USER = {
     },
     "strings": demo_strings(
         title="SomiFinance",
-        watermark="SomiFinance ©2026 mDemarco12",
+        watermark="SomiFinance ©<span id=\"wmYear\">2026</span> mDemarco12 · <span id=\"wmVer\"></span>",
         key="somifinance.v1",
-        calendar_note="Seeded with recurring US releases. Add your own dates alongside them.",
+        calendar_note="Starts with a few example rows so the table isn't empty — edit or delete them freely.",
     ),
 }
 
@@ -372,11 +480,11 @@ def personal_variant():
         },
         "strings": demo_strings(
             title="SomiFinance — Personal",
-            watermark="SomiFinance ©2026 mDemarco12",
+            watermark="SomiFinance ©<span id=\"wmYear\">2026</span> mDemarco12 · <span id=\"wmVer\"></span>",
             key="somifinance.personal.v1",
             calendar_note=d.get(
                 "calendarNote",
-                "Seeded with recurring US releases plus your own dates.",
+                "A few example rows to start with, alongside your own dates.",
             ),
         ),
         "tracked": False,
@@ -410,6 +518,7 @@ def main():
     if found:
         die("%s contains real data (%s) — it must never enter a tracked build"
             % (SOURCE, ", ".join(found)))
+    check_budget_parity(src)
 
     variants = [USER]
     personal = personal_variant()
