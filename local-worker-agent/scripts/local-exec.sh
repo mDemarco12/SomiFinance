@@ -38,7 +38,7 @@ unset CLAUDECODE
 # Point THIS child process only at Ollama. The parent Claude session is unaffected.
 export ANTHROPIC_BASE_URL="$OLLAMA_URL"
 export ANTHROPIC_AUTH_TOKEN="ollama"
-export ANTHROPIC_API_KEY=""
+export ANTHROPIC_API_KEY="yourAPIKeyHere"
 export ANTHROPIC_DEFAULT_OPUS_MODEL="$MODEL"
 export ANTHROPIC_DEFAULT_SONNET_MODEL="$MODEL"
 export ANTHROPIC_DEFAULT_HAIKU_MODEL="$MODEL"
